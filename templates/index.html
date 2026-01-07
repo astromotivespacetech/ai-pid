@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered PI&D Tool</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>AI-Powered Text-to-PI&D Tool</h1>
+    <div style="float:right">
+        {% if user %}
+            Logged in as <strong>{{ user.username }}</strong> | <a href="/logout">Logout</a>
+        {% else %}
+            <a href="/login">Sign in with Google</a>
+        {% endif %}
+    </div>
+    <form action="/generate-pid" method="post">
+        <label for="instruction">Describe your system:</label><br>
+        <textarea id="instruction" name="instruction" rows="5" cols="40">{% if instruction %}{{ instruction }}{% endif %}</textarea><br>
+        <button type="submit">Generate PI&D</button>
+    </form>
+
+    {% if error %}
+    <div style="color:crimson">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    {% if image_url %}
+    <h2>Generated PI&D</h2>
+    <div>
+        <img src="{{ image_url }}" alt="Generated PI&D graph" style="max-width:100%;height:auto;"/>
+    </div>
+    {% if user %}
+    <form action="/save-graph" method="post">
+        <input type="hidden" name="filename_base" value="{{ filename_base }}" />
+        <input type="hidden" name="instruction" value="{{ instruction }}" />
+        <input type="hidden" name="nodes" value='{{ nodes | tojson | safe }}' />
+        <input type="hidden" name="edges" value='{{ edges | tojson | safe }}' />
+        <button type="submit">Save to my account</button>
+    </form>
+    {% endif %}
+    {% if nodes or edges %}
+    <h3>Parsed Graph Data (debug)</h3>
+    <div>
+        <strong>Nodes:</strong> {{ nodes }}<br>
+        <strong>Edges:</strong> {{ edges }}
+    </div>
+    {% endif %}
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,8 @@
+digraph {
+	"relief valve"
+	tank
+	manifold
+	"digital gauge"
+	"manual regulator"
+	tank -> manifold
+}
