@@ -1,6 +1,5 @@
 import os
 import json
-import graphviz as gv
 
 try:
     import openai
@@ -8,16 +7,30 @@ except Exception:
     openai = None
 
 
-def generate_pid_graph(instruction: str, filename_base: str = "pid_graph"):
+def generate_pid_graph(instruction: str, filename_base: str = "pid_graph", existing_graph: dict = None):
     """Generate graph data by parsing `instruction` using OpenAI.
 
     This function uses the OpenAI API to parse the provided text into a JSON
     structure with `nodes` and `edges`. No local/fallback parsing is performed;
     if the LLM parsing fails for any reason, an error message is printed and
     returned in a dict with an `error` key.
+    
+    If existing_graph is provided, the LLM will modify the existing graph based on the instruction.
     """
     nodes = set()
     edges = []
+
+    def clean_parsed_data(obj):
+        """Recursively clean parsed JSON to remove undefined/null values."""
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return {k: clean_parsed_data(v) for k, v in obj.items() if v is not None and str(v) != "undefined"}
+        if isinstance(obj, list):
+            return [clean_parsed_data(item) for item in obj if item is not None and str(item) != "undefined"]
+        if isinstance(obj, str) and obj.lower() == "undefined":
+            return None
+        return obj
 
     def parse_with_llm(text: str):
         """Use OpenAI to parse the instruction into nodes/edges JSON.
@@ -36,14 +49,29 @@ def generate_pid_graph(instruction: str, filename_base: str = "pid_graph"):
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
         system = (
-            "You are a parser that converts short engineering text descriptions into a compact JSON"
-            " representation describing nodes and directed edges for a PI&D-like diagram."
+            "You are a strict JSON parser for engineering PI&D requests."
+            " Convert the description into a compact JSON with keys:"
+            " nodes (list of node ids/objects), edges (list of pairs or {source,target}),"
+            " and assistant (optional string with clarifying questions or suggestions)."
+            " Return ONLY JSON, no prose."
         )
 
-        user = (
-            "Parse the following description and return ONLY a JSON object with two keys: nodes and edges."
-        )
-        user += "\n\nDescription:\n" + text.strip() + "\n\nRespond with JSON only."
+        if existing_graph and (existing_graph.get("nodes") or existing_graph.get("edges")):
+            user = (
+                "You are modifying an existing PI&D diagram. Current diagram:\n"
+                f"Nodes: {existing_graph.get('nodes', [])}\n"
+                f"Edges: {existing_graph.get('edges', [])}\n\n"
+                "Based on the following instruction, modify the diagram by adding, removing, or changing nodes and edges. "
+                "Return ONLY a JSON object with keys: nodes (complete list), edges (complete list),"
+                " and assistant (optional suggestions/questions string).\n\n"
+                f"Instruction: {text.strip()}\n\nRespond with JSON only."
+            )
+        else:
+            user = (
+                "Parse the following description and return ONLY a JSON object with keys: nodes, edges,"
+                " and assistant (optional suggestions/questions string)."
+            )
+            user += "\n\nDescription:\n" + text.strip() + "\n\nRespond with JSON only."
 
         try:
             client = None
@@ -160,12 +188,14 @@ def generate_pid_graph(instruction: str, filename_base: str = "pid_graph"):
             content_json = content[start:] if start != -1 else content
             try:
                 parsed = json.loads(content_json)
-                return parsed
+                # Clean the parsed data to remove undefined values
+                return clean_parsed_data(parsed)
             except json.JSONDecodeError:
                 try:
                     decoder = json.JSONDecoder()
                     parsed, _ = decoder.raw_decode(content_json)
-                    return parsed
+                    # Clean the parsed data to remove undefined values
+                    return clean_parsed_data(parsed)
                 except Exception as e:
                     dbg_dir = "output"
                     os.makedirs(dbg_dir, exist_ok=True)
@@ -182,6 +212,13 @@ def generate_pid_graph(instruction: str, filename_base: str = "pid_graph"):
     if not parsed or not isinstance(parsed, dict):
         print("[LLM ERROR] LLM parsing failed or returned invalid output; no fallback parsing will be attempted")
         return {"error": "LLM parsing failed"}
+
+    assistant_text = parsed.get("assistant") or parsed.get("notes") or parsed.get("questions")
+    if isinstance(assistant_text, (list, dict)):
+        try:
+            assistant_text = json.dumps(assistant_text)
+        except Exception:
+            assistant_text = str(assistant_text)
 
     for n in parsed.get("nodes", []):
         nid = n.get("id") if isinstance(n, dict) else str(n)
@@ -204,15 +241,9 @@ def generate_pid_graph(instruction: str, filename_base: str = "pid_graph"):
         print("[LLM ERROR] Parsing produced no nodes or edges")
         return {"error": "Parsing produced no nodes or edges"}
 
-    # Create the graph using Graphviz
-    graph = gv.Digraph(format="png")
-    for node in nodes:
-        graph.node(node)
-    for edge in edges:
-        graph.edge(*edge)
-
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, filename_base)
-    graph.render(output_path, view=False)
-    return {"nodes": list(nodes), "edges": edges, "graph_file": f"{output_path}.png"}
+    # Visualization rendering removed; return parsed data only
+    # Clean nodes and edges before returning
+    clean_nodes = [str(n) for n in nodes if n is not None and str(n) != "undefined"]
+    clean_edges = [(str(src), str(tgt)) for src, tgt in edges if src is not None and tgt is not None and str(src) != "undefined" and str(tgt) != "undefined"]
+    
+    return {"nodes": clean_nodes, "edges": clean_edges, "assistant_message": assistant_text or "", "graph_file": None}

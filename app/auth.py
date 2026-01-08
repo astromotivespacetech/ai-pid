@@ -15,20 +15,65 @@ def _conn():
 def init_db():
     conn = _conn()
     cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password_hash TEXT,
-            provider TEXT,
-            provider_id TEXT,
-            email TEXT,
-            display_name TEXT,
-            created_at TEXT NOT NULL
+    
+    # Check if users table exists
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    table_exists = cur.fetchone()
+    
+    if not table_exists:
+        # Create new table with nullable username and password_hash
+        cur.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password_hash TEXT,
+                provider TEXT,
+                provider_id TEXT,
+                email TEXT,
+                display_name TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
         )
-        """
-    )
+    else:
+        # Table exists - need to check constraints and potentially recreate
+        # SQLite doesn't support ALTER COLUMN, so we need to recreate if needed
+        cur.execute("PRAGMA table_info(users)")
+        columns = cur.fetchall()
+        # Check if username or password_hash have NOT NULL constraint (notnull == 1)
+        has_constraint = any(col[1] in ('username', 'password_hash') and col[3] == 1 for col in columns)
+        
+        if has_constraint:
+            print("[DB] Recreating users table to remove NOT NULL constraints...")
+            # Backup existing data
+            cur.execute("SELECT id, username, password_hash, provider, provider_id, email, display_name, created_at FROM users")
+            existing_users = cur.fetchall()
+            
+            # Drop and recreate
+            cur.execute("DROP TABLE users")
+            cur.execute(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE,
+                    password_hash TEXT,
+                    provider TEXT,
+                    provider_id TEXT,
+                    email TEXT,
+                    display_name TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            
+            # Restore data
+            for user in existing_users:
+                cur.execute(
+                    "INSERT INTO users (id, username, password_hash, provider, provider_id, email, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    user
+                )
+    
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS graphs (
@@ -89,17 +134,35 @@ def get_or_create_oauth_user(provider: str, provider_id: str, email: str = None,
     row = cur.fetchone()
     if row:
         uid = row[0]
+        print(f"[Auth] Found existing user: uid={uid}")
         conn.close()
         return uid
-    # Insert new
+    # Insert new - generate a username for OAuth users
+    # Use email prefix or fallback to provider_providerId
+    username = email.split("@")[0] if email else f"{provider}_{provider_id}"
+    # Make username unique if it already exists
+    base_username = username
+    counter = 1
+    while True:
+        cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+        if not cur.fetchone():
+            break
+        username = f"{base_username}_{counter}"
+        counter += 1
+    
     try:
         cur.execute(
             "INSERT INTO users (username, password_hash, provider, provider_id, email, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (None, None, provider, provider_id, email, display_name, now),
+            (username, None, provider, provider_id, email, display_name, now),
         )
         conn.commit()
         uid = cur.lastrowid
-    except sqlite3.IntegrityError:
+        print(f"[Auth] Created new user: uid={uid}, username={username}")
+    except sqlite3.IntegrityError as e:
+        print(f"[Auth ERROR] IntegrityError creating user: {e}")
+        uid = None
+    except Exception as e:
+        print(f"[Auth ERROR] Unexpected error creating user: {e}")
         uid = None
     conn.close()
     return uid
@@ -122,12 +185,12 @@ def authenticate_user(username: str, password: str) -> Optional[int]:
 def get_user(user_id: int) -> Optional[dict]:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, created_at FROM users WHERE id = ?", (user_id,))
+    cur.execute("SELECT id, username, email, display_name, created_at FROM users WHERE id = ?", (user_id,))
     row = cur.fetchone()
     conn.close()
     if not row:
         return None
-    return {"id": row[0], "username": row[1], "created_at": row[2]}
+    return {"id": row[0], "username": row[1], "email": row[2], "display_name": row[3], "created_at": row[4]}
 
 
 def save_graph(user_id: int, filename: str, instruction: str, nodes: list, edges: list) -> int:
@@ -166,6 +229,15 @@ def get_graphs_for_user(user_id: int):
             }
         )
     return result
+
+
+def delete_graph(graph_id: int):
+    """Delete a graph by ID."""
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM graphs WHERE id = ?", (graph_id,))
+    conn.commit()
+    conn.close()
 
 
 # lightweight json helpers to avoid importing json in many places

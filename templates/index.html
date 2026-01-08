@@ -5,49 +5,803 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI-Powered PI&D Tool</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+    <script src="/static/pid_symbols.js?v=2"></script>
+    <script src="/static/graph_viewer.js?v=2"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+        
+        #header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #ddd;
+            background: #f9f9f9;
+        }
+        
+        #main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        #content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #chat-sidebar {
+            width: 350px;
+            border-left: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+        }
+        
+        #chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        #chat-input-area {
+            padding: 12px 15px;
+            border-top: 1px solid #ddd;
+            background: #f9f9f9;
+        }
+        
+        .chat-message {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            animation: slideIn 0.3s ease-in-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message-user {
+            align-items: flex-end;
+        }
+        
+        .message-ai {
+            align-items: flex-start;
+        }
+        
+        .message-bubble {
+            max-width: 90%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            word-wrap: break-word;
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+        
+        .message-user .message-bubble {
+            background: #0078D7;
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+        
+        .message-ai .message-bubble {
+            background: #e8e8e8;
+            color: #333;
+            border-bottom-left-radius: 2px;
+        }
+        
+        #chat-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: Arial, sans-serif;
+            font-size: 0.9em;
+            resize: none;
+            box-sizing: border-box;
+            height: 40px;
+        }
+        
+        #chat-input:focus {
+            outline: none;
+            border-color: #0078D7;
+            box-shadow: 0 0 4px rgba(0, 120, 215, 0.3);
+        }
+        
+        #chat-send-btn {
+            width: 100%;
+            margin-top: 8px;
+            padding: 10px;
+            background-color: #0078D7;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        #chat-send-btn:hover {
+            background-color: #005fa3;
+        }
+        
+        #chat-send-btn:active {
+            background-color: #004578;
+        }
+        
+        .login-prompt {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+        }
+        
+        #graph-container {
+            flex: 1;
+            border: 2px solid #ddd;
+            background: #f9f9f9;
+            margin-bottom: 15px;
+            border-radius: 6px;
+        }
+        
+        .graph-controls {
+            padding: 10px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        
+        .graph-controls button {
+            margin-right: 10px;
+            padding: 5px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+    </style>
 </head>
 <body>
-    <h1>AI-Powered Text-to-PI&D Tool</h1>
-    <div style="float:right">
+    <div id="header">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h1 style="margin: 0 0 8px 0;">AI-Powered Text-to-PI&D Tool</h1>
+                {% if user %}
+                <div style="color: #666; font-size: 0.9em;">
+                    Signed in as <strong>{{ user.display_name or user.email or user.username }}</strong>
+                    <span style="margin-left: 15px;"><a href="/my-graphs">My Saved Graphs</a></span>
+                    <span style="margin-left: 15px;"><a href="/logout">Logout</a></span>
+                </div>
+                {% else %}
+                <div style="color: #666; font-size: 0.9em;">
+                    <a href="/login">Sign in with Google</a> to save your work
+                </div>
+                {% endif %}
+            </div>
+            <button id="help-btn" style="padding: 10px 15px; font-size: 18px; background: #0066cc; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Help">?</button>
+        </div>
+    </div>
+
+    <div id="main-container">
+        <div id="content-area">
+            {% if not user %}
+            <div class="login-prompt">
+                <p>Please <a href="/login">sign in with Google</a> to use the AI-Powered PI&D generation tool.</p>
+            </div>
+            {% else %}
+                {% if error %}
+                <div style="color:crimson;padding:10px;background:#ffe0e0;border-radius:6px;margin-bottom:15px">
+                    <strong>Error:</strong> {{ error }}
+                </div>
+                {% endif %}
+
+                <div id="graph-container" style="display: {% if nodes or edges %}block{% else %}none{% endif %};"></div>
+                <div id="graph-controls-area" style="display: {% if nodes or edges %}block{% else %}none{% endif %};" class="graph-controls">
+                    <button onclick="cy && cy.fit(50)">Fit to View</button>
+                    <button onclick="cy && cy.center()">Center</button>
+                    <button onclick="cy && cy.zoom(cy.zoom() * 1.2)">Zoom In</button>
+                    <button onclick="cy && cy.zoom(cy.zoom() * 0.8)">Zoom Out</button>
+                    <select id="layout-selector" onchange="applyLayout(this.value)" style="padding: 8px; margin: 0 5px; border-radius: 4px; border: 1px solid #ddd;">
+                        <option value="dagre-lr">Layout: Flow (L→R)</option>
+                        <option value="dagre-tb">Layout: Flow (T→B)</option>
+                        <option value="breadthfirst">Layout: Breadth First</option>
+                        <option value="circle">Layout: Circle</option>
+                        <option value="grid">Layout: Grid</option>
+                        <option value="cose">Layout: Force (chaotic)</option>
+                    </select>
+                    <button onclick="toggleCustomizer()">Customize Symbols</button>
+                </div>
+                
+                <div id="save-area" style="display: {% if nodes or edges %}block{% else %}none{% endif %}; margin-top: 15px;">
+                    <form id="save-form" action="/save-graph" method="post" style="display:inline;" onsubmit="syncGraphState()">
+                        <input type="hidden" name="filename_base" value="{{ filename_base|default('') }}" id="filename-base-input" />
+                        <input type="hidden" name="instruction" value="{{ instruction|default('') }}" id="instruction-input" />
+                        <input type="hidden" name="nodes" value='{{ (nodes or []) | tojson | safe }}' id="nodes-input" />
+                        <input type="hidden" name="edges" value='{{ (edges or []) | tojson | safe }}' id="edges-input" />
+                        <button type="submit" style="padding: 10px 20px;">Save to my account</button>
+                    </form>
+                </div>
+                
+                <div id="symbol-customizer" style="display:none;margin-top:15px;padding:15px;border:1px solid #ddd;background:#fff;border-radius:6px">
+                    <h4>Customize Node Symbols</h4>
+                    <div id="node-customizer-list"></div>
+                </div>
+                
+                <div style="color: #666; padding: 20px; text-align: center;" id="placeholder-text">
+                    <p>Describe your system in the chat to generate a PI&D diagram.</p>
+                </div>
+                
+                <script id="node-data-json" type="application/json">{{ (nodes or []) | tojson }}</script>
+                <script id="edge-data-json" type="application/json">{{ (edges or []) | tojson }}</script>
+            {% endif %}
+        </div>
+
         {% if user %}
-            Logged in as <strong>{{ user.username }}</strong> | <a href="/logout">Logout</a>
-        {% else %}
-            <a href="/login">Sign in with Google</a>
+        <div id="chat-sidebar">
+            <div style="padding: 10px 15px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+                <strong>Chat</strong>
+                <button id="clear-chat-btn" style="padding: 4px 10px; font-size: 0.85em; background-color: #d9534f;" onclick="clearChat()">Clear</button>
+            </div>
+            <div id="chat-history"></div>
+            <div id="chat-input-area">
+                <textarea id="chat-input" placeholder="Describe your system..."></textarea>
+                <button id="chat-send-btn">Send</button>
+            </div>
+        </div>
         {% endif %}
     </div>
-    <form action="/generate-pid" method="post">
-        <label for="instruction">Describe your system:</label><br>
-        <textarea id="instruction" name="instruction" rows="5" cols="40">{% if instruction %}{{ instruction }}{% endif %}</textarea><br>
-        <button type="submit">Generate PI&D</button>
-    </form>
 
-    {% if error %}
-    <div style="color:crimson">
-        <strong>Error:</strong> {{ error }}
-    </div>
-    {% endif %}
+    <script>
+        let cy;
+        let nodeData = JSON.parse(document.getElementById('node-data-json')?.textContent || '[]');
+        let edgeData = JSON.parse(document.getElementById('edge-data-json')?.textContent || '[]');
+        let conversationHistory = [];
 
-    {% if image_url %}
-    <h2>Generated PI&D</h2>
-    <div>
-        <img src="{{ image_url }}" alt="Generated PI&D graph" style="max-width:100%;height:auto;"/>
+        // Load conversation history from localStorage
+        function loadConversationHistory() {
+            const saved = localStorage.getItem('pidConversationHistory');
+            if (saved) {
+                try {
+                    conversationHistory = JSON.parse(saved);
+                    renderChatHistory();
+                } catch (e) {
+                    conversationHistory = [];
+                }
+            }
+        }
+
+        // Save conversation history to localStorage
+        function saveConversationHistory() {
+            localStorage.setItem('pidConversationHistory', JSON.stringify(conversationHistory));
+        }
+
+        // Render chat history to the chat display
+        function renderChatHistory() {
+            const chatHistory = document.getElementById('chat-history');
+            if (!chatHistory) return;
+            
+            chatHistory.innerHTML = '';
+            conversationHistory.forEach(msg => {
+                const div = document.createElement('div');
+                div.className = `chat-message message-${msg.role}`;
+                div.innerHTML = `<div class="message-bubble">${escapeHtml(msg.content)}</div>`;
+                chatHistory.appendChild(div);
+            });
+            
+            // Scroll to bottom
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Add message to chat and save
+        function addMessage(role, content) {
+            conversationHistory.push({ role, content });
+            saveConversationHistory();
+            renderChatHistory();
+        }
+
+        // Clear chat history
+        function clearChat() {
+            if (confirm('Are you sure you want to clear the chat history?')) {
+                conversationHistory = [];
+                saveConversationHistory();
+                renderChatHistory();
+            }
+        }
+
+
+        // Send chat message to backend
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message to chat
+            addMessage('user', message);
+            input.value = '';
+            input.style.height = '40px'; // Reset height
+            
+            // Add loading indicator
+            const chatHistory = document.getElementById('chat-history');
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'chat-message message-ai';
+            loadingDiv.innerHTML = '<div class="message-bubble">Generating PI&D...</div>';
+            loadingDiv.id = 'loading-indicator';
+            chatHistory.appendChild(loadingDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        history: conversationHistory.slice(0, -1) // Exclude the just-added user message
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Remove loading indicator
+                const loading = document.getElementById('loading-indicator');
+                if (loading) loading.remove();
+                
+                // Add AI response to chat
+                addMessage('ai', data.response);
+                
+                // Update graph if nodes/edges are provided
+                if (data.nodes && data.edges && data.nodes.length > 0) {
+                    console.log('Updating graph with nodes:', data.nodes, 'edges:', data.edges);
+                    updateGraph(data.nodes, data.edges, data.filename_base);
+                } else {
+                    console.log('No graph data in response:', data);
+                }
+            } catch (error) {
+                // Remove loading indicator
+                const loading = document.getElementById('loading-indicator');
+                if (loading) loading.remove();
+                
+                const errorMsg = `Error: ${error.message}`;
+                addMessage('ai', errorMsg);
+                console.error('Chat error:', error);
+            }
+        }
+
+        // Update the graph with new data
+        function updateGraph(nodes, edges, filename_base = null) {
+            // Make sure graph container and controls are visible
+            const graphContainer = document.getElementById('graph-container');
+            const graphControls = document.getElementById('graph-controls-area');
+            const saveArea = document.getElementById('save-area');
+            const placeholderText = document.getElementById('placeholder-text');
+            
+            if (graphContainer) {
+                graphContainer.style.display = 'block';
+            }
+            if (graphControls) {
+                graphControls.style.display = 'block';
+            }
+            if (saveArea) {
+                saveArea.style.display = 'block';
+                // Update save form with current data
+                const filenameInput = document.getElementById('filename-base-input');
+                const nodesInput = document.getElementById('nodes-input');
+                const edgesInput = document.getElementById('edges-input');
+                if (filenameInput && filename_base) {
+                    filenameInput.value = filename_base || '';
+                }
+                if (nodesInput && nodes) {
+                    // Filter out undefined values
+                    const cleanNodes = nodes.filter(n => n !== undefined && n !== null);
+                    nodesInput.value = JSON.stringify(cleanNodes);
+                }
+                if (edgesInput && edges) {
+                    // Convert edge tuples to objects for saving and filter out undefined
+                    const edgeObjects = edges.filter(e => e !== undefined && e !== null).map(e => {
+                        if (Array.isArray(e)) {
+                            return { source: e[0], target: e[1] };
+                        }
+                        return e;
+                    });
+                    edgesInput.value = JSON.stringify(edgeObjects);
+                }
+            }
+            if (placeholderText) {
+                placeholderText.style.display = 'none';
+            }
+            
+            // Update nodeData for customize symbols to work
+            nodeData = nodes;
+            
+            if (!cy) {
+                // Initialize graph and capture instance
+                initGraphViewer('graph-container', nodes, edges).then((instance) => {
+                    cy = instance;
+                    
+                    // Restore custom imageUrl for nodes if available
+                    nodes.forEach(node => {
+                        if (typeof node === 'object' && node.imageUrl) {
+                            const cyNode = cy.getElementById(node.id);
+                            if (cyNode && cyNode.length > 0) {
+                                cyNode.data('imageUrl', node.imageUrl);
+                            }
+                        }
+                    });
+                    
+                    populateNodeCustomizer(nodes);
+                }).catch(err => {
+                    console.error('Failed to initialize graph:', err);
+                });
+            } else {
+                // Update existing graph
+                cy.elements().remove();
+                
+                // Add new elements
+                nodes.forEach(id => {
+                    cy.add({ data: { id, label: id, svgUrl: null } });
+                });
+                
+                // Convert edges to proper format and add them
+                edges.forEach(edge => {
+                    let source, target;
+                    if (Array.isArray(edge)) {
+                        // Tuple format [source, target]
+                        [source, target] = edge;
+                    } else if (typeof edge === 'object') {
+                        // Object format {source, target}
+                        source = edge.source;
+                        target = edge.target;
+                    }
+                    
+                    if (source && target) {
+                        cy.add({ 
+                            data: { 
+                                id: `${source}-${target}`,
+                                source: source, 
+                                target: target 
+                            } 
+                        });
+                    }
+                });
+                
+                // Fetch SVG data for nodes
+                nodes.forEach(async (nodeId) => {
+                    const symbol = classifyNode(nodeId);
+                    if (symbol && symbol.svgUrl) {
+                        try {
+                            const response = await fetch(symbol.svgUrl);
+                            if (response.ok) {
+                                const svgText = await response.text();
+                                const dataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgText);
+                                const node = cy.getElementById(nodeId);
+                                if (node.length > 0) {
+                                    node.data('svgDataUri', dataUri);
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Failed to fetch symbol for', nodeId, ':', err);
+                        }
+                    }
+                });
+                
+                // Re-layout
+                cy.layout({ name: 'cose', animate: true, animationDuration: 500 }).run();
+                populateNodeCustomizer(nodes);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Ensure symbols are loaded first
+            await ensureSymbolsLoaded();
+            
+            // Load chat history
+            loadConversationHistory();
+            
+            // Setup chat input handlers
+            const chatInput = document.getElementById('chat-input');
+            const chatSendBtn = document.getElementById('chat-send-btn');
+            
+            if (chatInput && chatSendBtn) {
+                // Auto-grow textarea
+                chatInput.addEventListener('input', function() {
+                    this.style.height = 'auto';
+                    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+                });
+                
+                // Send on Enter (but not Shift+Enter)
+                chatInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+                
+                // Send button click
+                chatSendBtn.addEventListener('click', sendMessage);
+            }
+            
+            // Initialize graph if nodes exist
+            if (nodeData && nodeData.length > 0) {
+                cy = await initGraphViewer('graph-container', nodeData, edgeData);
+                await populateNodeCustomizer();
+            }
+        });
+        
+        function applyLayout(layoutType) {
+            if (!cy) return;
+            
+            let layoutConfig = {
+                animate: true,
+                animationDuration: 500,
+                fit: true,
+                padding: 50
+            };
+            
+            switch(layoutType) {
+                case 'dagre-lr':
+                    layoutConfig.name = 'dagre';
+                    layoutConfig.rankDir = 'LR';
+                    layoutConfig.nodeSep = 80;
+                    layoutConfig.rankSep = 120;
+                    layoutConfig.edgeSep = 20;
+                    layoutConfig.ranker = 'network-simplex';
+                    break;
+                case 'dagre-tb':
+                    layoutConfig.name = 'dagre';
+                    layoutConfig.rankDir = 'TB';
+                    layoutConfig.nodeSep = 80;
+                    layoutConfig.rankSep = 120;
+                    layoutConfig.edgeSep = 20;
+                    layoutConfig.ranker = 'network-simplex';
+                    break;
+                case 'breadthfirst':
+                    layoutConfig.name = 'breadthfirst';
+                    layoutConfig.directed = true;
+                    layoutConfig.spacingFactor = 1.5;
+                    break;
+                case 'circle':
+                    layoutConfig.name = 'circle';
+                    layoutConfig.spacingFactor = 1.5;
+                    break;
+                case 'grid':
+                    layoutConfig.name = 'grid';
+                    layoutConfig.spacingFactor = 1.5;
+                    break;
+                case 'cose':
+                    layoutConfig.name = 'cose';
+                    layoutConfig.nodeRepulsion = 8000;
+                    layoutConfig.idealEdgeLength = 100;
+                    layoutConfig.numIter = 1000;
+                    break;
+            }
+            
+            cy.layout(layoutConfig).run();
+        }
+        
+        function toggleCustomizer() {
+            const customizer = document.getElementById('symbol-customizer');
+            if (customizer) {
+                customizer.style.display = customizer.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+        
+        function syncGraphState() {
+            // Capture current graph state with custom icons before save
+            if (!cy) return true;
+            
+            const nodesInput = document.getElementById('nodes-input');
+            const nodes = cy.nodes().map(node => ({
+                id: node.data('id'),
+                label: node.data('label'),
+                imageUrl: node.data('imageUrl')
+            }));
+            
+            if (nodesInput) {
+                nodesInput.value = JSON.stringify(nodes);
+            }
+            
+            return true; // Allow form submission to continue
+        }
+        
+        async function populateNodeCustomizer(nodes = null) {
+            const container = document.getElementById('node-customizer-list');
+            if (!container) return;
+            
+            const nodesToCustomize = nodes || nodeData;
+            if (!nodesToCustomize || nodesToCustomize.length === 0) return;
+            
+            // Get available symbols
+            const availableSymbols = await getAvailableSymbols();
+            
+            container.innerHTML = '';
+            nodesToCustomize.forEach(nodeId => {
+                const bestSymbol = findBestSymbol(nodeId);
+                const div = document.createElement('div');
+                div.style.cssText = 'margin-bottom:15px;padding:10px;border:1px solid #eee;background:#f9f9f9;border-radius:4px';
+                
+                div.innerHTML = `
+                    <strong>${nodeId}</strong> 
+                    <span style="margin-left:10px;color:#666">(Currently: <em>${bestSymbol || 'default'}</em>)</span>
+                    <br>
+                    <label style="display:inline-block;margin-top:5px;margin-right:15px">
+                        Symbol:
+                        <select onchange="updateNodeSymbol('${nodeId}', this.value)" style="margin-left:5px;padding:4px;width:250px">
+                            <option value="">-- Auto (Fuzzy Match) --</option>
+                            ${availableSymbols.map(sym => 
+                                `<option value="${sym}" ${sym === bestSymbol ? 'selected' : ''}>${sym}</option>`
+                            ).join('')}
+                        </select>
+                    </label>
+                    <br>
+                    <label style="display:inline-block;margin-top:8px">
+                        Or upload custom icon:
+                        <input type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" 
+                               onchange="uploadCustomIcon('${nodeId}', this)" 
+                               style="margin-left:5px;padding:4px;font-size:0.9em">
+                    </label>
+                `;
+                container.appendChild(div);
+            });
+        }
+        
+        async function updateNodeSymbol(nodeId, symbolName) {
+            const node = cy.getElementById(nodeId);
+            if (!node || node.length === 0) return;
+            
+            // If empty string selected, revert to auto-matching
+            if (!symbolName) {
+                const style = await getNodeStyle(nodeId);
+                if (style.backgroundImage) {
+                    node.data('imageUrl', style.backgroundImage);
+                }
+                console.log('Reverted to auto symbol for', nodeId);
+                return;
+            }
+            
+            // Otherwise use the selected symbol
+            const symbolPath = `/static/symbols/${symbolName}.png`;
+            try {
+                const response = await fetch(symbolPath, { method: 'HEAD' });
+                if (response.ok) {
+                    node.data('imageUrl', symbolPath);
+                    console.log('Updated node symbol for', nodeId, 'to', symbolName);
+                }
+            } catch (err) {
+                console.error('Failed to update symbol for', nodeId, ':', err);
+            }
+        }
+        
+        async function uploadCustomIcon(nodeId, inputElement) {
+            const file = inputElement.files[0];
+            if (!file) return;
+            
+            // Show loading indicator
+            const originalText = inputElement.parentElement.textContent;
+            inputElement.parentElement.innerHTML = 'Uploading...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch('/api/symbols/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Upload failed');
+                }
+                
+                const data = await response.json();
+                
+                if (data.success && data.path) {
+                    // Update node with custom icon
+                    const node = cy.getElementById(nodeId);
+                    if (node && node.length > 0) {
+                        node.data('imageUrl', data.path);
+                        console.log('Custom icon uploaded and applied to', nodeId);
+                    }
+                    
+                    // Repopulate customizer to reset UI
+                    await populateNodeCustomizer();
+                    alert('Custom icon uploaded successfully!');
+                } else {
+                    throw new Error(data.error || 'Upload failed');
+                }
+            } catch (err) {
+                console.error('Failed to upload custom icon:', err);
+                alert('Failed to upload icon: ' + err.message);
+                // Repopulate customizer to reset UI
+                await populateNodeCustomizer();
+            }
+        }
+    </script>
+
+    <!-- Help Modal -->
+    <div id="help-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 8px; padding: 30px; max-width: 600px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">How to Use</h2>
+                <button onclick="closeHelpModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
+            </div>
+            
+            <div style="color: #333; line-height: 1.6;">
+                <h3>Getting Started</h3>
+                <p><strong>1. Describe your P&ID:</strong> Write a description of your process flow diagram in the text box (e.g., "pump feeds water through a filter to a tank")</p>
+                
+                <p><strong>2. Generate:</strong> Send your message to generate a diagram. The AI will create nodes and connections based on your description.</p>
+                
+                <p><strong>3. View & Edit:</strong> The diagram appears on the left. You can:</p>
+                <ul style="margin: 10px 0;">
+                    <li><strong>Drag nodes</strong> to reposition them</li>
+                    <li><strong>Change layouts</strong> using the Layout dropdown for better organization</li>
+                    <li><strong>Zoom & pan</strong> to navigate the diagram</li>
+                </ul>
+                
+                <p><strong>4. Customize:</strong> Click "Customize Symbols" to change how equipment appears (pump, tank, valve, etc.)</p>
+                
+                <p><strong>5. Save:</strong> Save your diagram to your account using the "Save to my account" button</p>
+                
+                <h3>Tips</h3>
+                <ul style="margin: 10px 0;">
+                    <li>Use technical terms for better results (pump, valve, heat exchanger, separator, etc.)</li>
+                    <li>Describe the flow direction and connections clearly</li>
+                    <li>Try different layouts if the diagram looks chaotic</li>
+                    <li>You can manually adjust node positions by dragging</li>
+                </ul>
+            </div>
+        </div>
     </div>
-    {% if user %}
-    <form action="/save-graph" method="post">
-        <input type="hidden" name="filename_base" value="{{ filename_base }}" />
-        <input type="hidden" name="instruction" value="{{ instruction }}" />
-        <input type="hidden" name="nodes" value='{{ nodes | tojson | safe }}' />
-        <input type="hidden" name="edges" value='{{ edges | tojson | safe }}' />
-        <button type="submit">Save to my account</button>
-    </form>
-    {% endif %}
-    {% if nodes or edges %}
-    <h3>Parsed Graph Data (debug)</h3>
-    <div>
-        <strong>Nodes:</strong> {{ nodes }}<br>
-        <strong>Edges:</strong> {{ edges }}
-    </div>
-    {% endif %}
-    {% endif %}
+
+    <script>
+        function openHelpModal() {
+            document.getElementById('help-modal').style.display = 'flex';
+        }
+        
+        function closeHelpModal() {
+            document.getElementById('help-modal').style.display = 'none';
+        }
+        
+        document.getElementById('help-btn').addEventListener('click', openHelpModal);
+        
+        // Close modal when clicking outside of it
+        document.getElementById('help-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeHelpModal();
+            }
+        });
+    </script>
 </body>
 </html>

@@ -1,21 +1,56 @@
 body {
     font-family: Arial, sans-serif;
-    margin: 20px;
+    margin: 0;
+    padding: 0;
 }
+
 h1 {
     color: #0078D7;
 }
+
+h3 {
+    color: #333;
+    margin: 15px 0 10px 0;
+}
+
+h4 {
+    color: #555;
+    margin: 0 0 10px 0;
+}
+
 form {
     margin-top: 20px;
 }
+
 textarea {
     margin-top: 10px;
     margin-bottom: 10px;
+    font-family: Arial, sans-serif;
 }
+
 button {
     padding: 10px 20px;
     background-color: #0078D7;
     color: white;
     border: none;
     cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #005fa3;
+}
+
+button:active {
+    background-color: #004578;
+}
+
+a {
+    color: #0078D7;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
 }

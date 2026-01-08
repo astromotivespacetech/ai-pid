@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, UploadFile, File
+from fastapi.responses import JSONResponse
+from starlette.responses import Response
 from dotenv import load_dotenv
 from fastapi.responses import HTMLResponse, RedirectResponse
 import os
@@ -11,11 +13,78 @@ from app import auth
 import uuid
 from authlib.integrations.starlette_client import OAuth
 import json
+import shutil
+from pathlib import Path
+
+
+# Custom JSON encoder to handle Undefined and other edge cases
+class SafeJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        # Handle any object that's not JSON serializable
+        if hasattr(obj, '__dict__'):
+            return self.default(obj.__dict__)
+        # For any other non-serializable type, convert to string
+        return str(obj)
+
+
+def json_response(payload: dict, status_code: int = 200) -> Response:
+    """Return a JSON HTTP response using a safe encoder (avoids Undefined issues)."""
+    try:
+        content = json.dumps(payload, cls=SafeJSONEncoder)
+    except Exception as e:
+        # As a last resort, stringify the payload
+        print(f"[json_response] Serialization error: {type(e).__name__}: {e}")
+        try:
+            content = json.dumps({"error": str(e), "payload": str(payload)})
+        except Exception:
+            content = '{"error":"serialization failed"}'
+    return Response(content=content, media_type="application/json", status_code=status_code)
+
+
+def deep_clean_for_json(obj, depth=0, max_depth=10):
+    """Recursively clean an object to make it JSON-serializable."""
+    if depth > max_depth:
+        return str(obj)
+    
+    # Handle None
+    if obj is None:
+        return None
+    
+    # Handle primitives
+    if isinstance(obj, (bool, int, float, str)):
+        return obj
+    
+    # Handle lists/tuples
+    if isinstance(obj, (list, tuple)):
+        return [deep_clean_for_json(item, depth + 1, max_depth) for item in obj]
+    
+    # Handle sets
+    if isinstance(obj, set):
+        return [deep_clean_for_json(item, depth + 1, max_depth) for item in obj]
+    
+    # Handle dicts
+    if isinstance(obj, dict):
+        result = {}
+        for key, value in obj.items():
+            try:
+                result[str(key)] = deep_clean_for_json(value, depth + 1, max_depth)
+            except Exception as e:
+                print(f"[Clean] Error cleaning dict value for key {key}: {e}")
+                result[str(key)] = str(value)
+        return result
+    
+    # For any other type, convert to string
+    print(f"[Clean] Converting {type(obj).__name__} to string")
+    return str(obj)
 
 app = FastAPI()
 
 # Load .env for local development (if present)
 load_dotenv()
+
+# Create custom symbols directory if it doesn't exist
+CUSTOM_SYMBOLS_DIR = Path("static/symbols/custom")
+CUSTOM_SYMBOLS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Static files and templates initialization
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -33,7 +102,7 @@ app.add_middleware(
 )
 
 # Session middleware for simple cookie-based sessions
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "changeme"))
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "changeme"), same_site="lax", https_only=False, max_age=60*60*24*7)
 
 # OAuth client setup (Google)
 oauth = OAuth()
@@ -56,22 +125,44 @@ async def homepage(request: Request):
     """
     user = None
     uid = request.session.get("user_id")
+    print(f"[Homepage] Session: {dict(request.session)}, user_id={uid}")
     if uid:
         user = auth.get_user(uid)
+        print(f"[Homepage] User: {user}")
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
 @app.post("/generate-pid")
-async def generate_graph(request: Request, instruction: str = Form(...)):
+async def generate_graph(request: Request, instruction: str = Form(...), existing_nodes: str = Form(None), existing_edges: str = Form(None)):
     """
     Generate a PI&D graph and return the corresponding image file.
     """
     filename_base = f"pid_graph_{uuid.uuid4().hex}"
 
     try:
-        # Call the graph generator (saves to output/<filename_base>.png)
-        graph_data = generate_pid_graph(instruction, filename_base)
-        image_url = f"/output/{filename_base}.png"
+        # Parse existing graph if provided
+        existing_graph = None
+        if existing_nodes or existing_edges:
+            def _safe_json_load(val):
+                if not val:
+                    return []
+                txt = val.strip()
+                if not txt:
+                    return []
+                try:
+                    return json.loads(txt)
+                except Exception:
+                    return []
+            existing_graph = {
+                "nodes": _safe_json_load(existing_nodes),
+                "edges": _safe_json_load(existing_edges)
+            }
+        
+        # Call the graph generator (now returns data only; no image rendering)
+        graph_data = generate_pid_graph(instruction, filename_base, existing_graph=existing_graph)
+        image_url = None
+        if graph_data.get("graph_file"):
+            image_url = f"/output/{filename_base}.png"
 
         # If user is logged in, offer a save option by including user info
         user = None
@@ -118,20 +209,38 @@ async def auth_callback(request: Request):
     """OAuth callback: finalize login and create/get user."""
     if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
         return templates.TemplateResponse("index.html", {"request": request, "error": "OAuth not configured"})
-    token = await oauth.google.authorize_access_token(request)
-    # Try to get ID token claims (OpenID Connect)
+    
     try:
-        user_info = await oauth.google.parse_id_token(request, token)
-    except Exception:
-        # Fallback to userinfo endpoint
-        user_info = await oauth.google.userinfo(token=token)
+        token = await oauth.google.authorize_access_token(request)
+        # Try to get ID token claims (OpenID Connect)
+        try:
+            user_info = await oauth.google.parse_id_token(request, token)
+        except Exception:
+            # Fallback to userinfo endpoint
+            user_info = await oauth.google.userinfo(token=token)
 
-    provider_id = user_info.get("sub") or user_info.get("id")
-    email = user_info.get("email")
-    name = user_info.get("name") or user_info.get("preferred_username")
-    uid = auth.get_or_create_oauth_user("google", provider_id, email, name)
-    request.session["user_id"] = uid
-    return RedirectResponse(url="/", status_code=303)
+        provider_id = user_info.get("sub") or user_info.get("id")
+        email = user_info.get("email")
+        name = user_info.get("name") or user_info.get("preferred_username")
+        
+        print(f"[OAuth] User info: provider_id={provider_id}, email={email}, name={name}")
+        
+        uid = auth.get_or_create_oauth_user("google", provider_id, email, name)
+        
+        if uid is None:
+            print("[OAuth ERROR] Failed to create/get user")
+            return templates.TemplateResponse("index.html", {"request": request, "error": "Failed to create user account"})
+        
+        print(f"[OAuth] Setting session user_id={uid}")
+        request.session["user_id"] = uid
+        print(f"[OAuth] Session after set: {dict(request.session)}")
+        
+        return RedirectResponse(url="/", status_code=303)
+    except Exception as e:
+        print(f"[OAuth ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return templates.TemplateResponse("index.html", {"request": request, "error": f"Login failed: {str(e)}"})
 
 
 @app.get("/logout")
@@ -141,16 +250,155 @@ async def logout(request: Request):
 
 
 @app.post("/save-graph")
-async def save_graph(request: Request, filename_base: str = Form(...), instruction: str = Form(None)):
+async def save_graph_endpoint(request: Request, filename_base: str = Form(...), instruction: str = Form(None)):
     uid = request.session.get("user_id")
     if not uid:
         return RedirectResponse(url="/login", status_code=303)
-    # Save metadata only (graph file is already written)
+    # Save metadata only
     form = await request.form()
     nodes = form.get("nodes")
     edges = form.get("edges")
-    auth.save_graph(uid, filename_base + ".png", instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
-    return RedirectResponse(url="/", status_code=303)
+    graph_id = auth.save_graph(uid, filename_base, instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
+    print(f"[Save] Saved graph id={graph_id} for user={uid}")
+    return RedirectResponse(url="/my-graphs", status_code=303)
+
+
+@app.post("/chat")
+async def chat(request: Request):
+    """
+    Handle chat messages and generate/update PI&D diagrams based on conversational input.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        return json_response({"error": "Not authenticated"}, status_code=401)
+    
+    try:
+        body = await request.json()
+        user_message = body.get("message", "").strip()
+        chat_history = body.get("history", [])
+        
+        if not user_message:
+            return json_response({"error": "Empty message"}, status_code=400)
+        
+        # Reconstruct conversation context for the graph generator
+        # Extract any previous instructions from chat history
+        previous_instructions = ""
+        if chat_history:
+            for msg in chat_history:
+                if msg.get("role") == "user":
+                    previous_instructions += msg.get("content", "") + "\n"
+        
+        # Build the full instruction context
+        full_instruction = previous_instructions + user_message if previous_instructions else user_message
+        filename_base = f"pid_graph_{uuid.uuid4().hex}"
+        
+        # Generate or update the graph
+        try:
+            graph_data = generate_pid_graph(full_instruction, filename_base)
+            
+            # Debug: print the raw graph_data
+            print(f"[Chat] Raw graph_data repr: {repr(graph_data)[:500]}")
+            
+            # Check if graph generation failed
+            if graph_data.get("error"):
+                error_msg = graph_data.get("error", "Unknown error")
+                print(f"[Chat] Graph generation error: {error_msg}")
+                return json_response({
+                    "response": "I couldn't generate the P&ID diagram. Could you try describing your system differently?",
+                    "error": error_msg
+                }, status_code=500)
+        except Exception as e:
+            error_msg = f"Failed to generate graph: {str(e)}"
+            print(f"[Chat] Exception: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return json_response({
+                "response": "I couldn't generate the P&ID diagram. Could you try describing your system differently?",
+                "error": error_msg
+            }, status_code=500)
+        
+        # Prepare response with graph data
+        default_text = "I've generated your P&ID diagram. You can customize the symbols using the Customize Symbols button, or continue describing your system to make changes."
+        
+        # Safely convert nodes and edges to JSON-serializable format
+        try:
+            # First, deep clean the graph data to remove any problematic objects
+            print(f"[Chat] Starting to clean graph_data...")
+            graph_data = deep_clean_for_json(graph_data)
+            print(f"[Chat] Graph_data cleaned successfully")
+            
+            # Prefer assistant suggestions/questions when available
+            assistant_msg = graph_data.get("assistant_message") or ""
+            nodes_data = graph_data.get("nodes", [])
+            
+            if isinstance(nodes_data, set):
+                nodes_list = list(nodes_data)
+            else:
+                nodes_list = list(nodes_data) if nodes_data else []
+            
+            # Filter out None and empty values
+            nodes_list = [str(n) for n in nodes_list if n]
+            
+            # Convert edges from tuples to lists
+            edges_data = graph_data.get("edges", [])
+            
+            edges_list = []
+            for edge in edges_data:
+                if isinstance(edge, (list, tuple)) and len(edge) >= 2:
+                    edges_list.append([str(edge[0]), str(edge[1])])
+                elif isinstance(edge, dict) and "source" in edge and "target" in edge:
+                    edges_list.append({
+                        "source": str(edge.get("source", "")),
+                        "target": str(edge.get("target", ""))
+                    })
+            
+            response_data = {
+                "response": (assistant_msg.strip() + ("\n\n" + default_text if default_text else "")).strip() if assistant_msg else default_text,
+                "nodes": nodes_list,
+                "edges": edges_list,
+                "filename_base": filename_base
+            }
+            
+            # Final deep clean of response
+            response_data = deep_clean_for_json(response_data)
+            print(f"[Chat] Response data prepared successfully")
+            
+            # Verify all values are JSON-serializable
+            json_str = json.dumps(response_data, cls=SafeJSONEncoder)
+            print(f"[Chat] Response successfully serialized, length: {len(json_str)}")
+            
+        except Exception as e:
+            print(f"[Chat] Error preparing response data: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return json_response({
+                "response": "Generated diagram but encountered an error preparing the response. Please try again.",
+                "error": str(e)
+            }, status_code=500)
+        
+        # Return the response using safe JSON encoding
+        try:
+            return json_response(response_data)
+        except Exception as e:
+            print(f"[Chat] Final serialization error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            # Last resort - return a very simple response
+            return json_response({
+                "response": "Generated a diagram but encountered a serialization error",
+                "error": str(e),
+                "nodes": [],
+                "edges": []
+            }, status_code=500)
+        
+    except Exception as e:
+        print(f"[Chat] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "error": str(e),
+            "response": "An unexpected error occurred. Please try again."
+        }, status_code=500)
 
 
 def json_loads(s):
@@ -159,3 +407,168 @@ def json_loads(s):
         return json.loads(s) if s else None
     except Exception:
         return None
+
+
+@app.get("/my-graphs")
+async def my_graphs(request: Request):
+    """View all saved graphs for the logged-in user."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return RedirectResponse(url="/login", status_code=303)
+    user = auth.get_user(uid)
+    graphs = auth.get_graphs_for_user(uid)
+    return templates.TemplateResponse("my_graphs.html", {"request": request, "user": user, "graphs": graphs})
+
+
+@app.get("/load-graph/{graph_id}")
+async def load_graph(request: Request, graph_id: int):
+    """Load a saved graph for viewing/editing."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    # Get the graph and verify ownership
+    graphs = auth.get_graphs_for_user(uid)
+    graph = next((g for g in graphs if g["id"] == graph_id), None)
+    
+    if not graph:
+        user = auth.get_user(uid)
+        return templates.TemplateResponse("index.html", {"request": request, "user": user, "error": "Graph not found or access denied"})
+    
+    user = auth.get_user(uid)
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "user": user,
+        "instruction": graph["instruction"],
+        "nodes": graph["nodes"],
+        "edges": graph["edges"],
+        "filename_base": graph["filename"].replace(".png", "") if graph["filename"] else None
+    })
+
+
+@app.get("/download-graph/{graph_id}")
+async def download_graph(request: Request, graph_id: int):
+    """Download a saved graph as JSON."""
+    from fastapi.responses import JSONResponse
+    uid = request.session.get("user_id")
+    if not uid:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    # Get the graph and verify ownership
+    graphs = auth.get_graphs_for_user(uid)
+    graph = next((g for g in graphs if g["id"] == graph_id), None)
+    
+    if not graph:
+        return JSONResponse({"error": "Graph not found or access denied"}, status_code=404)
+    
+    # Prepare download data
+    download_data = {
+        "id": graph["id"],
+        "instruction": graph["instruction"],
+        "nodes": graph["nodes"],
+        "edges": graph["edges"],
+        "created_at": graph["created_at"]
+    }
+    
+    filename = f"pid_graph_{graph_id}.json"
+    return JSONResponse(
+        content=download_data,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.post("/delete-graph/{graph_id}")
+async def delete_graph(request: Request, graph_id: int):
+    """Delete a saved graph."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    # Verify ownership before deleting
+    graphs = auth.get_graphs_for_user(uid)
+    graph = next((g for g in graphs if g["id"] == graph_id), None)
+    
+    if not graph:
+        return RedirectResponse(url="/my-graphs", status_code=303)
+    
+    auth.delete_graph(graph_id)
+    print(f"[Delete] Deleted graph id={graph_id} for user={uid}")
+    return RedirectResponse(url="/my-graphs", status_code=303)
+
+
+@app.get("/me")
+async def me(request: Request):
+    """Return current session user details (debug aid)."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return {"logged_in": False}
+    user = auth.get_user(uid)
+    return {"logged_in": True, "user": user}
+
+
+@app.get("/api/symbols")
+async def get_symbols():
+    """Return list of all available P&ID symbols (filenames)."""
+    symbols_dir = os.path.join(os.path.dirname(__file__), "..", "static", "symbols")
+    custom_dir = os.path.join(symbols_dir, "custom")
+    try:
+        # Get all PNG files in the main symbols directory
+        symbol_files = sorted([f for f in os.listdir(symbols_dir) if f.endswith('.png')])
+        
+        # Get custom symbols if directory exists
+        custom_files = []
+        if os.path.exists(custom_dir):
+            custom_files = sorted([f"custom/{f}" for f in os.listdir(custom_dir) if f.endswith('.png')])
+        
+        # Combine and convert filenames to symbol names (remove .png extension)
+        all_files = symbol_files + custom_files
+        symbols = [f.replace('.png', '') for f in all_files]
+        
+        return {
+            "success": True,
+            "count": len(symbols),
+            "symbols": symbols
+        }
+    except Exception as e:
+        print(f"[API] Error listing symbols: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "symbols": []
+        }
+
+
+@app.post("/api/symbols/upload")
+async def upload_custom_symbol(file: UploadFile = File(...)):
+    """Upload a custom symbol image."""
+    try:
+        # Validate file type
+        if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.svg')):
+            return JSONResponse(
+                {"success": False, "error": "Only PNG, JPG, JPEG, and SVG files are allowed"},
+                status_code=400
+            )
+        
+        # Generate safe filename (preserve extension)
+        file_ext = os.path.splitext(file.filename)[1]
+        safe_name = f"{uuid.uuid4().hex}{file_ext}"
+        file_path = CUSTOM_SYMBOLS_DIR / safe_name
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Return the relative path that can be used in imageUrl
+        relative_path = f"/static/symbols/custom/{safe_name}"
+        
+        return {
+            "success": True,
+            "path": relative_path,
+            "filename": safe_name
+        }
+    except Exception as e:
+        print(f"[API] Error uploading symbol: {e}")
+        return JSONResponse(
+            {"success": False, "error": str(e)},
+            status_code=500
+        )
