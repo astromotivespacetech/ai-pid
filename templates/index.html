@@ -1316,6 +1316,45 @@
         if (inspClear) {
             inspClear.addEventListener('click', () => setSelectedNode(null));
         }
+
+        // Graph control button event listeners
+        const layoutBtn = document.getElementById('layout-btn');
+        if (layoutBtn) {
+            layoutBtn.addEventListener('click', () => {
+                if (cy) {
+                    cy.fit(50);
+                }
+            });
+        }
+
+        const centerBtn = document.getElementById('center-btn');
+        if (centerBtn) {
+            centerBtn.addEventListener('click', () => {
+                if (cy) {
+                    cy.center();
+                }
+            });
+        }
+
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener('click', () => {
+                if (cy) {
+                    cy.zoom(cy.zoom() * 1.2);
+                    cy.center();
+                }
+            });
+        }
+
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener('click', () => {
+                if (cy) {
+                    cy.zoom(cy.zoom() * 0.8);
+                    cy.center();
+                }
+            });
+        }
     </script>
 </body>
 </html>
