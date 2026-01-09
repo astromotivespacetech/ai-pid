@@ -7,6 +7,7 @@ import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 from utils.graph_generator import generate_pid_graph
 from starlette.middleware.sessions import SessionMiddleware
 from app import auth
@@ -100,6 +101,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware to handle HTTPS scheme from Railway proxy
+class SchemeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.headers.get("x-forwarded-proto") == "https":
+            request.scope["scheme"] = "https"
+        return await call_next(request)
+
+app.add_middleware(SchemeMiddleware)
 
 # Session middleware for simple cookie-based sessions
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "changeme"), same_site="lax", https_only=False, max_age=60*60*24*7)
