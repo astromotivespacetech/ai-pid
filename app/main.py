@@ -402,8 +402,10 @@ async def chat(request: Request):
                 print(f"[Chat] Graph generation error: {error_msg}")
                 return json_response({
                     "response": "I couldn't generate the P&ID diagram. Could you try describing your system differently?",
-                    "error": error_msg
-                }, status_code=500)
+                    "error": error_msg,
+                    "nodes": [],
+                    "edges": []
+                }, status_code=200)
         except Exception as e:
             error_msg = f"Failed to generate graph: {str(e)}"
             print(f"[Chat] Exception: {error_msg}")
