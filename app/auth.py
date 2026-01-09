@@ -207,6 +207,29 @@ def save_graph(user_id: int, filename: str, instruction: str, nodes: list, edges
     return gid
 
 
+def update_graph(graph_id: int, user_id: int, filename: str, instruction: str, nodes: list, edges: list) -> int:
+    """Update an existing graph, verifying ownership"""
+    conn = _conn()
+    cur = conn.cursor()
+    
+    # Verify ownership
+    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        conn.close()
+        raise ValueError(f"Graph {graph_id} not found or access denied")
+    
+    # Update the graph
+    now = datetime.utcnow().isoformat()
+    cur.execute(
+        "UPDATE graphs SET filename = ?, instruction = ?, nodes_json = ?, edges_json = ? WHERE id = ?",
+        (filename, instruction, json_dumps(nodes), json_dumps(edges), graph_id),
+    )
+    conn.commit()
+    conn.close()
+    return graph_id
+
+
 def get_graphs_for_user(user_id: int):
     conn = _conn()
     cur = conn.cursor()

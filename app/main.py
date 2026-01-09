@@ -104,10 +104,13 @@ app.add_middleware(
 # Session middleware for simple cookie-based sessions
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "changeme"), same_site="lax", https_only=False, max_age=60*60*24*7)
 
-# OAuth client setup (Google)
+# OAuth client setup (Google, GitHub)
 oauth = OAuth()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
+
 if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
     oauth.register(
         name="google",
@@ -116,6 +119,28 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
         client_kwargs={"scope": "openid email profile"},
     )
+
+if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
+    oauth.register(
+        name="github",
+        client_id=GITHUB_CLIENT_ID,
+        client_secret=GITHUB_CLIENT_SECRET,
+        access_token_url="https://github.com/login/oauth/access_token",
+        authorize_url="https://github.com/login/oauth/authorize",
+        api_base_url="https://api.github.com/",
+        client_kwargs={"scope": "read:user user:email"},
+    )
+
+PROVIDERS = {
+    "google": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+    "github": bool(GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET),
+}
+
+
+def index_context(request: Request, **kwargs):
+    ctx = {"request": request, "providers": PROVIDERS}
+    ctx.update(kwargs)
+    return ctx
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -129,7 +154,7 @@ async def homepage(request: Request):
     if uid:
         user = auth.get_user(uid)
         print(f"[Homepage] User: {user}")
-    return templates.TemplateResponse("index.html", {"request": request, "user": user})
+    return templates.TemplateResponse("index.html", index_context(request, user=user))
 
 
 @app.post("/generate-pid")
@@ -171,21 +196,21 @@ async def generate_graph(request: Request, instruction: str = Form(...), existin
             user = auth.get_user(uid)
         return templates.TemplateResponse(
             "index.html",
-            {
-                "request": request,
-                "image_url": image_url,
-                "instruction": instruction,
-                "nodes": graph_data.get("nodes"),
-                "edges": graph_data.get("edges"),
-                "user": user,
-                "filename_base": filename_base,
-            },
+            index_context(
+                request,
+                image_url=image_url,
+                instruction=instruction,
+                nodes=graph_data.get("nodes"),
+                edges=graph_data.get("edges"),
+                user=user,
+                filename_base=filename_base,
+            ),
         )
     except Exception as exc:
         # Make sure output dir exists for any partial files
         os.makedirs("output", exist_ok=True)
         error_msg = str(exc)
-        return templates.TemplateResponse("index.html", {"request": request, "error": error_msg, "instruction": instruction})
+        return templates.TemplateResponse("index.html", index_context(request, error=error_msg, instruction=instruction))
 
 
 @app.on_event("startup")
@@ -195,52 +220,90 @@ def startup():
 
 
 @app.get("/login")
-async def oauth_login(request: Request):
-    """Start Google OAuth login flow."""
-    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
-        return templates.TemplateResponse("index.html", {"request": request, "error": "OAuth not configured"})
-    # url_for should reference the callback endpoint name
-    redirect_uri = request.url_for("auth_callback")
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+async def oauth_login_default(request: Request):
+    """Start OAuth login flow (default: Google)."""
+    return await start_oauth(request, "google")
 
 
-@app.get("/auth")
-async def auth_callback(request: Request):
-    """OAuth callback: finalize login and create/get user."""
-    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
-        return templates.TemplateResponse("index.html", {"request": request, "error": "OAuth not configured"})
-    
+@app.get("/login/{provider}")
+async def oauth_login_provider(request: Request, provider: str):
+    """Start OAuth login flow for a specific provider."""
+    return await start_oauth(request, provider)
+
+
+async def start_oauth(request: Request, provider: str):
+    provider = provider.lower()
+    if provider == "google":
+        if not PROVIDERS["google"]:
+            return templates.TemplateResponse("index.html", index_context(request, error="Google OAuth not configured"))
+        redirect_uri = request.url_for("auth_callback", provider="google")
+        return await oauth.google.authorize_redirect(request, redirect_uri)
+    if provider == "github":
+        if not PROVIDERS["github"]:
+            return templates.TemplateResponse("index.html", index_context(request, error="GitHub OAuth not configured"))
+        redirect_uri = request.url_for("auth_callback", provider="github")
+        return await oauth.github.authorize_redirect(request, redirect_uri)
+    return templates.TemplateResponse("index.html", index_context(request, error="Unsupported login provider"))
+
+
+@app.get("/auth/{provider}")
+async def auth_callback(request: Request, provider: str):
+    """OAuth callback: finalize login and create/get user for the provider."""
+    provider = provider.lower()
+
     try:
-        token = await oauth.google.authorize_access_token(request)
-        # Try to get ID token claims (OpenID Connect)
-        try:
-            user_info = await oauth.google.parse_id_token(request, token)
-        except Exception:
-            # Fallback to userinfo endpoint
-            user_info = await oauth.google.userinfo(token=token)
+        if provider == "google":
+            if not PROVIDERS["google"]:
+                return templates.TemplateResponse("index.html", index_context(request, error="Google OAuth not configured"))
+            token = await oauth.google.authorize_access_token(request)
+            try:
+                user_info = await oauth.google.parse_id_token(request, token)
+            except Exception:
+                user_info = await oauth.google.userinfo(token=token)
 
-        provider_id = user_info.get("sub") or user_info.get("id")
-        email = user_info.get("email")
-        name = user_info.get("name") or user_info.get("preferred_username")
-        
-        print(f"[OAuth] User info: provider_id={provider_id}, email={email}, name={name}")
-        
-        uid = auth.get_or_create_oauth_user("google", provider_id, email, name)
-        
+            provider_id = user_info.get("sub") or user_info.get("id")
+            email = user_info.get("email")
+            name = user_info.get("name") or user_info.get("preferred_username")
+        elif provider == "github":
+            if not PROVIDERS["github"]:
+                return templates.TemplateResponse("index.html", index_context(request, error="GitHub OAuth not configured"))
+            token = await oauth.github.authorize_access_token(request)
+            user_resp = await oauth.github.get("user", token=token)
+            user_info = user_resp.json() if user_resp else {}
+
+            provider_id = str(user_info.get("id")) if user_info else None
+            email = user_info.get("email") if user_info else None
+            name = user_info.get("name") or user_info.get("login") if user_info else None
+
+            if not email:
+                emails_resp = await oauth.github.get("user/emails", token=token)
+                if emails_resp:
+                    emails_data = emails_resp.json()
+                    if isinstance(emails_data, list) and emails_data:
+                        primary = next((e for e in emails_data if e.get("primary") and e.get("verified")), None)
+                        fallback = emails_data[0]
+                        email = (primary or fallback).get("email")
+        else:
+            return templates.TemplateResponse("index.html", index_context(request, error="Unsupported login provider"))
+
+        print(f"[OAuth] Provider={provider}, provider_id={provider_id}, email={email}, name={name}")
+
+        uid = auth.get_or_create_oauth_user(provider, provider_id, email, name)
+
         if uid is None:
             print("[OAuth ERROR] Failed to create/get user")
-            return templates.TemplateResponse("index.html", {"request": request, "error": "Failed to create user account"})
-        
+            return templates.TemplateResponse("index.html", index_context(request, error="Failed to create user account"))
+
         print(f"[OAuth] Setting session user_id={uid}")
         request.session["user_id"] = uid
         print(f"[OAuth] Session after set: {dict(request.session)}")
-        
+
         return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         print(f"[OAuth ERROR] {e}")
         import traceback
         traceback.print_exc()
-        return templates.TemplateResponse("index.html", {"request": request, "error": f"Login failed: {str(e)}"})
+        return templates.TemplateResponse("index.html", index_context(request, error=f"Login failed: {str(e)}"))
 
 
 @app.get("/logout")
@@ -250,17 +313,41 @@ async def logout(request: Request):
 
 
 @app.post("/save-graph")
-async def save_graph_endpoint(request: Request, filename_base: str = Form(...), instruction: str = Form(None)):
+async def save_graph_endpoint(request: Request, filename_base: str = Form(None), instruction: str = Form(None), graph_id: str = Form(None)):
     uid = request.session.get("user_id")
     if not uid:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse({"success": False, "error": "Not logged in"}, status_code=401)
+    
     # Save metadata only
     form = await request.form()
     nodes = form.get("nodes")
     edges = form.get("edges")
-    graph_id = auth.save_graph(uid, filename_base, instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
-    print(f"[Save] Saved graph id={graph_id} for user={uid}")
-    return RedirectResponse(url="/my-graphs", status_code=303)
+    
+    # Generate filename_base if not provided
+    if not filename_base:
+        filename_base = f"pid_graph_{uuid.uuid4().hex[:8]}"
+    
+    # If graph_id is provided and not empty, update existing graph; otherwise create new
+    try:
+        if graph_id and graph_id.strip():
+            try:
+                gid = int(graph_id)
+                auth.update_graph(gid, uid, filename_base, instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
+                print(f"[Save] Updated graph id={gid} for user={uid}")
+            except (ValueError, Exception) as e:
+                print(f"[Save] Error updating graph: {e}")
+                gid = auth.save_graph(uid, filename_base, instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
+                print(f"[Save] Created new graph id={gid} for user={uid}")
+        else:
+            gid = auth.save_graph(uid, filename_base, instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
+            print(f"[Save] Created new graph id={gid} for user={uid}")
+        
+        return JSONResponse({"success": True, "graph_id": gid})
+    except Exception as e:
+        print(f"[Save] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @app.post("/chat")
@@ -356,7 +443,8 @@ async def chat(request: Request):
                 "response": (assistant_msg.strip() + ("\n\n" + default_text if default_text else "")).strip() if assistant_msg else default_text,
                 "nodes": nodes_list,
                 "edges": edges_list,
-                "filename_base": filename_base
+                "filename_base": filename_base,
+                "instruction": full_instruction
             }
             
             # Final deep clean of response
@@ -433,17 +521,18 @@ async def load_graph(request: Request, graph_id: int):
     
     if not graph:
         user = auth.get_user(uid)
-        return templates.TemplateResponse("index.html", {"request": request, "user": user, "error": "Graph not found or access denied"})
+        return templates.TemplateResponse("index.html", index_context(request, user=user, error="Graph not found or access denied"))
     
     user = auth.get_user(uid)
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "user": user,
-        "instruction": graph["instruction"],
-        "nodes": graph["nodes"],
-        "edges": graph["edges"],
-        "filename_base": graph["filename"].replace(".png", "") if graph["filename"] else None
-    })
+    return templates.TemplateResponse("index.html", index_context(
+        request,
+        user=user,
+        instruction=graph["instruction"],
+        nodes=graph["nodes"],
+        edges=graph["edges"],
+        filename_base=graph["filename"].replace(".png", "") if graph["filename"] else None,
+        graph_id=graph["id"],
+    ))
 
 
 @app.get("/download-graph/{graph_id}")

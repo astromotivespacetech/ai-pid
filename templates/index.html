@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI-Powered PI&D Tool</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
     <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
     <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
-    <script src="/static/pid_symbols.js?v=2"></script>
-    <script src="/static/graph_viewer.js?v=2"></script>
+    <script src="/static/pid_symbols.js?v=3"></script>
+    <script src="/static/graph_viewer.js?v=5"></script>
     <style>
         body {
             display: flex;
@@ -17,232 +18,524 @@
             height: 100vh;
             margin: 0;
             padding: 0;
+            background: var(--neutral-50);
         }
-        
+
         #header {
-            padding: 15px 20px;
-            border-bottom: 1px solid #ddd;
-            background: #f9f9f9;
+            padding: 0.75rem 2rem;
+            border-bottom: 1px solid var(--neutral-200);
+            background: white;
+            box-shadow: var(--shadow-sm);
+            z-index: 10;
         }
-        
+
+        #header h1 {
+            font-size: 1.5rem;
+            margin: 0;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--neutral-700);
+        }
+
+        .header-links {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .header-link {
+            color: var(--primary-blue);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .header-link:hover {
+            text-decoration: underline;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        #help-btn {
+            border: 1px solid var(--neutral-300);
+            background: white;
+            color: var(--neutral-900);
+            border-radius: var(--radius-full);
+            width: 2.5rem;
+            height: 2.5rem;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: all var(--transition-fast);
+        }
+
+        #help-btn:hover {
+            background: var(--neutral-100);
+        }
+
         #main-container {
             display: flex;
             flex: 1;
             overflow: hidden;
         }
-        
+
         #content-area {
             flex: 1;
+            padding: 2rem;
             overflow-y: auto;
-            padding: 20px;
             display: flex;
             flex-direction: column;
         }
-        
+
         #chat-sidebar {
-            width: 350px;
-            border-left: 1px solid #ddd;
+            width: 360px;
             display: flex;
             flex-direction: column;
-            background: #fff;
+            border-left: 1px solid var(--neutral-200);
+            background: white;
+            box-shadow: -4px 0 12px rgba(0,0,0,0.04);
         }
-        
+
+        .chat-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--neutral-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
         #chat-history {
             flex: 1;
             overflow-y: auto;
-            padding: 15px;
-            border-bottom: 1px solid #ddd;
-        }
-        
-        #chat-input-area {
-            padding: 12px 15px;
-            border-top: 1px solid #ddd;
-            background: #f9f9f9;
-        }
-        
-        .chat-message {
-            margin-bottom: 12px;
+            padding: 1rem;
             display: flex;
             flex-direction: column;
-            animation: slideIn 0.3s ease-in-out;
+            gap: 0.75rem;
         }
-        
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+
+        #chat-input-area {
+            padding: 1rem;
+            border-top: 1px solid var(--neutral-200);
+            background: var(--neutral-50);
         }
-        
-        .message-user {
-            align-items: flex-end;
+
+        .chat-message {
+            display: flex;
         }
-        
-        .message-ai {
-            align-items: flex-start;
-        }
-        
+
         .message-bubble {
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius-lg);
             max-width: 90%;
-            padding: 10px 14px;
-            border-radius: 10px;
-            word-wrap: break-word;
-            font-size: 0.95em;
-            line-height: 1.4;
+            box-shadow: var(--shadow-sm);
         }
-        
+
+        .message-user {
+            justify-content: flex-end;
+        }
+
         .message-user .message-bubble {
-            background: #0078D7;
+            background: var(--primary-blue);
             color: white;
-            border-bottom-right-radius: 2px;
+            border-bottom-right-radius: 0.25rem;
         }
-        
+
         .message-ai .message-bubble {
-            background: #e8e8e8;
-            color: #333;
-            border-bottom-left-radius: 2px;
+            background: white;
+            color: var(--neutral-900);
+            border: 1px solid var(--neutral-200);
+            border-bottom-left-radius: 0.25rem;
         }
-        
+
         #chat-input {
             width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-family: Arial, sans-serif;
-            font-size: 0.9em;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--neutral-300);
+            border-radius: var(--radius-lg);
+            font-family: inherit;
+            font-size: 0.9375rem;
             resize: none;
             box-sizing: border-box;
-            height: 40px;
+            height: 44px;
+            transition: all var(--transition-fast);
         }
-        
+
         #chat-input:focus {
             outline: none;
-            border-color: #0078D7;
-            box-shadow: 0 0 4px rgba(0, 120, 215, 0.3);
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 3px var(--primary-blue-light);
         }
-        
+
         #chat-send-btn {
             width: 100%;
-            margin-top: 8px;
-            padding: 10px;
-            background-color: #0078D7;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: background-color 0.2s;
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
         }
-        
-        #chat-send-btn:hover {
-            background-color: #005fa3;
-        }
-        
-        #chat-send-btn:active {
-            background-color: #004578;
-        }
-        
+
         .login-prompt {
-            padding: 20px;
+            padding: 4rem 3rem;
             text-align: center;
-            color: #666;
+            background: white;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-xl);
+            max-width: 600px;
+            margin: 4rem auto;
         }
-        
+
+        .login-prompt p {
+            font-size: 1.25rem;
+            color: var(--neutral-700);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .signin-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .signin-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            min-width: 240px;
+            justify-content: center;
+        }
+
+        .signin-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        }
+
+        .signin-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        }
+
+        .signin-btn.google {
+            background: white;
+            color: #3c4043;
+            border: 1px solid #dadce0;
+        }
+
+        .signin-btn.google:hover {
+            background: #f8f9fa;
+            border-color: #d2d4d6;
+        }
+
+        .signin-btn.github {
+            background: white;
+            color: #24292e;
+            border: 1px solid #dadce0;
+        }
+
+        .signin-btn.github:hover {
+            background: #f8f9fa;
+            border-color: #d2d4d6;
+        }
+
+        .signin-logo {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
         #graph-container {
             flex: 1;
-            border: 2px solid #ddd;
-            background: #f9f9f9;
-            margin-bottom: 15px;
-            border-radius: 6px;
+            border: 1px solid var(--neutral-200);
+            background: white;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
         }
-        
+
         .graph-controls {
-            padding: 10px;
-            background: #f0f0f0;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+            padding: 1rem;
+            background: white;
+            border: 1px solid var(--neutral-200);
+            border-radius: var(--radius-lg);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            align-items: center;
+            box-shadow: var(--shadow-sm);
         }
-        
+
         .graph-controls button {
-            margin-right: 10px;
-            padding: 5px 15px;
+            margin: 0;
+            padding: 0.5rem 1rem;
+        }
+
+        .graph-controls select {
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--neutral-300);
+            font-size: 0.875rem;
             cursor: pointer;
-            border-radius: 4px;
+            background: white;
+            min-width: 180px;
+        }
+
+        #save-area {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        #save-area button {
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            box-shadow: var(--shadow-md);
+        }
+
+        .error-message {
+            color: var(--error);
+            padding: 1rem 1.25rem;
+            background: var(--error-bg);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--error);
+            margin-bottom: 1.25rem;
+            animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .error-message strong {
+            font-weight: 600;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: var(--radius-xl);
+            padding: 2rem;
+            max-width: 650px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-xl);
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--neutral-200);
+        }
+
+        .modal-header h2 {
+            margin: 0;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.75rem;
+            cursor: pointer;
+            color: var(--neutral-500);
+            padding: 0;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-md);
+            transition: all var(--transition-fast);
+        }
+
+        .modal-close:hover {
+            background: var(--neutral-100);
+            color: var(--neutral-900);
+        }
+
+        .modal-body {
+            color: var(--neutral-700);
+            line-height: 1.7;
+        }
+
+        .modal-body h3 {
+            color: var(--neutral-900);
+            font-size: 1.125rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .modal-body p {
+            margin-bottom: 1rem;
+        }
+
+        .modal-body ul {
+            margin: 0.75rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .modal-body li {
+            margin-bottom: 0.5rem;
+        }
+
+        .modal-body strong {
+            color: var(--neutral-900);
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
     <div id="header">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-                <h1 style="margin: 0 0 8px 0;">AI-Powered Text-to-PI&D Tool</h1>
+        <div class="header-content">
+            <div style="display: flex; align-items: center; gap: 2rem; flex: 1;">
+                <h1 style="margin: 0; white-space: nowrap;">AI-Powered Text-to-PI&D Tool</h1>
                 {% if user %}
-                <div style="color: #666; font-size: 0.9em;">
-                    Signed in as <strong>{{ user.display_name or user.email or user.username }}</strong>
-                    <span style="margin-left: 15px;"><a href="/my-graphs">My Saved Graphs</a></span>
-                    <span style="margin-left: 15px;"><a href="/logout">Logout</a></span>
-                </div>
-                {% else %}
-                <div style="color: #666; font-size: 0.9em;">
-                    <a href="/login">Sign in with Google</a> to save your work
+                <div class="user-info">
+                    <span>Signed in as <strong>{{ user.display_name or user.email or user.username }}</strong></span>
+                    <span style="color: var(--neutral-400);">|</span>
+                    <div class="header-links">
+                        <a href="/my-graphs" class="header-link">My Graphs</a>
+                        <a href="/logout" class="header-link">Logout</a>
+                    </div>
                 </div>
                 {% endif %}
             </div>
-            <button id="help-btn" style="padding: 10px 15px; font-size: 18px; background: #0066cc; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Help">?</button>
+            <div class="header-actions">
+                <button id="help-btn" title="Help">?</button>
+            </div>
         </div>
     </div>
 
     <div id="main-container">
         <div id="content-area">
             {% if not user %}
+            {% set google_enabled = providers.get('google') if providers else False %}
+            {% set github_enabled = providers.get('github') if providers else False %}
             <div class="login-prompt">
-                <p>Please <a href="/login">sign in with Google</a> to use the AI-Powered PI&D generation tool.</p>
+                <p>Welcome to the AI-Powered PI&D Tool</p>
+                <div class="signin-buttons">
+                    {% if google_enabled %}
+                    <a class="signin-btn google" href="/login/google">
+                        <svg class="signin-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                        </svg>
+                        Sign in with Google
+                    </a>
+                    {% endif %}
+                    {% if github_enabled %}
+                    <a class="signin-btn github" href="/login/github">
+                        <svg class="signin-logo" viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12c0 4.65 3.02 8.6 7.21 9.99.53.1.72-.23.72-.5 0-.25-.01-.92-.01-1.8-2.94.64-3.56-1.42-3.56-1.42-.48-1.22-1.17-1.54-1.17-1.54-.96-.65.07-.64.07-.64 1.06.08 1.62 1.1 1.62 1.1.95 1.62 2.48 1.15 3.09.88.1-.69.37-1.15.67-1.42-2.35-.27-4.82-1.18-4.82-5.24 0-1.16.41-2.1 1.09-2.84-.11-.27-.47-1.36.1-2.83 0 0 .88-.28 2.9 1.08a9.97 9.97 0 0 1 5.28 0c2.02-1.36 2.9-1.08 2.9-1.08.57 1.47.21 2.56.1 2.83.68.74 1.09 1.68 1.09 2.84 0 4.07-2.48 4.97-4.84 5.23.38.33.72.97.72 1.96 0 1.42-.01 2.57-.01 2.92 0 .27.19.61.73.5A10.53 10.53 0 0 0 22.5 12c0-5.8-4.7-10.5-10.5-10.5Z" fill="currentColor"/>
+                        </svg>
+                        Continue with GitHub
+                    </a>
+                    {% endif %}
+                </div>
             </div>
             {% else %}
                 {% if error %}
-                <div style="color:crimson;padding:10px;background:#ffe0e0;border-radius:6px;margin-bottom:15px">
+                <div class="error-message">
                     <strong>Error:</strong> {{ error }}
                 </div>
                 {% endif %}
 
-                <div id="graph-container" style="display: {% if nodes or edges %}block{% else %}none{% endif %};"></div>
-                <div id="graph-controls-area" style="display: {% if nodes or edges %}block{% else %}none{% endif %};" class="graph-controls">
-                    <button onclick="cy && cy.fit(50)">Fit to View</button>
-                    <button onclick="cy && cy.center()">Center</button>
-                    <button onclick="cy && cy.zoom(cy.zoom() * 1.2)">Zoom In</button>
-                    <button onclick="cy && cy.zoom(cy.zoom() * 0.8)">Zoom Out</button>
-                    <select id="layout-selector" onchange="applyLayout(this.value)" style="padding: 8px; margin: 0 5px; border-radius: 4px; border: 1px solid #ddd;">
-                        <option value="dagre-lr">Layout: Flow (L→R)</option>
-                        <option value="dagre-tb">Layout: Flow (T→B)</option>
-                        <option value="breadthfirst">Layout: Breadth First</option>
-                        <option value="circle">Layout: Circle</option>
-                        <option value="grid">Layout: Grid</option>
-                        <option value="cose">Layout: Force (chaotic)</option>
-                    </select>
-                    <button onclick="toggleCustomizer()">Customize Symbols</button>
-                </div>
+                <!-- Hidden form inputs for saving -->
+                <input type="hidden" id="graph-id-input" value="{{ graph_id or '' }}">
+                <input type="hidden" id="filename-base-input" value="{{ filename_base or '' }}">
+                <input type="hidden" id="instruction-input" value="{{ instruction or '' }}">
+                <input type="hidden" id="nodes-input" value="">
+                <input type="hidden" id="edges-input" value="">
+
+                <script id="node-data-json" type="application/json">{{ (nodes or []) | tojson }}</script>
+                <script id="edge-data-json" type="application/json">{{ (edges or []) | tojson }}</script>
+
+                <div id="graph-container" style="display: {% if nodes or edges %}block{% else %}none{% endif %}; flex: 1; width: 100%;"></div>
                 
-                <div id="save-area" style="display: {% if nodes or edges %}block{% else %}none{% endif %}; margin-top: 15px;">
-                    <form id="save-form" action="/save-graph" method="post" style="display:inline;" onsubmit="syncGraphState()">
-                        <input type="hidden" name="filename_base" value="{{ filename_base|default('') }}" id="filename-base-input" />
-                        <input type="hidden" name="instruction" value="{{ instruction|default('') }}" id="instruction-input" />
-                        <input type="hidden" name="nodes" value='{{ (nodes or []) | tojson | safe }}' id="nodes-input" />
-                        <input type="hidden" name="edges" value='{{ (edges or []) | tojson | safe }}' id="edges-input" />
-                        <button type="submit" style="padding: 10px 20px;">Save to my account</button>
-                    </form>
-                </div>
-                
-                <div id="symbol-customizer" style="display:none;margin-top:15px;padding:15px;border:1px solid #ddd;background:#fff;border-radius:6px">
-                    <h4>Customize Node Symbols</h4>
-                    <div id="node-customizer-list"></div>
-                </div>
-                
-                <div style="color: #666; padding: 20px; text-align: center;" id="placeholder-text">
-                    <p>Describe your system in the chat to generate a PI&D diagram.</p>
+                <!-- Controls and Inspector Row -->
+                <div id="controls-inspector-row" style="display: {% if nodes or edges %}flex{% else %}none{% endif %}; gap: 1rem; margin-top: 1rem; align-items: flex-start;">
+                    <!-- Graph Controls -->
+                    <div id="graph-controls" style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button id="layout-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="maximize-2" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button id="center-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="crosshair" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button id="zoom-in-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="zoom-in" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button id="zoom-out-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="zoom-out" style="width: 16px; height: 16px;"></i>
+                        </button>
+                        <button id="save-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="save" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
+
+                    <!-- Node Inspector -->
+                    <div id="node-inspector" style="flex: 1; background: white; border: 1px solid var(--neutral-200); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: 0.625rem;">
+                        <h4 style="margin:0 0 0.5rem 0; font-size: 0.875rem; font-weight: 600;">Node Inspector</h4>
+                        <div style="display:grid; grid-template-columns: 0.8fr 1.2fr 1fr; gap: 0.5rem; align-items: end; font-size: 0.8125rem;">
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                <label for="inspector-node-id" style="margin: 0; font-weight: 500; font-size: 0.75rem;">ID</label>
+                                <input id="inspector-node-id" type="text" disabled style="padding: 0.375rem 0.5rem; font-size: 0.8125rem;">
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                <label for="inspector-node-label" style="margin: 0; font-weight: 500; font-size: 0.75rem;">Label</label>
+                                <input id="inspector-node-label" type="text" placeholder="Node label" style="padding: 0.375rem 0.5rem; font-size: 0.8125rem;">
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                <label for="inspector-symbol-select" style="margin: 0; font-weight: 500; font-size: 0.75rem;">Symbol</label>
+                                <div style="position: relative;">
+                                    <div id="inspector-symbol-select" style="padding: 0.375rem 0.5rem; font-size: 0.8125rem; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); background: white; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; min-height: 32px;">
+                                        <span id="symbol-select-text">-- Auto --</span>
+                                    </div>
+                                    <div id="symbol-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px; background: white; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); max-height: 300px; overflow-y: auto; z-index: 1000;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="grid-column: 1 / -1; display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                                <label for="inspector-upload" style="margin: 0; font-weight: 500; white-space: nowrap; font-size: 0.75rem;">Upload:</label>
+                                <input id="inspector-upload" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" style="flex: 1; padding: 0.375rem 0.5rem; font-size: 0.8125rem;">
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <script id="node-data-json" type="application/json">{{ (nodes or []) | tojson }}</script>
@@ -252,14 +545,13 @@
 
         {% if user %}
         <div id="chat-sidebar">
-            <div style="padding: 10px 15px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+            <div class="chat-header">
                 <strong>Chat</strong>
-                <button id="clear-chat-btn" style="padding: 4px 10px; font-size: 0.85em; background-color: #d9534f;" onclick="clearChat()">Clear</button>
+                <button id="clear-chat-btn" class="danger small" onclick="clearChat()">Clear</button>
             </div>
             <div id="chat-history"></div>
             <div id="chat-input-area">
-                <textarea id="chat-input" placeholder="Describe your system..."></textarea>
-                <button id="chat-send-btn">Send</button>
+                <textarea id="chat-input" placeholder="Describe your system... (Press Enter to send)"></textarea>
             </div>
         </div>
         {% endif %}
@@ -270,6 +562,8 @@
         let nodeData = JSON.parse(document.getElementById('node-data-json')?.textContent || '[]');
         let edgeData = JSON.parse(document.getElementById('edge-data-json')?.textContent || '[]');
         let conversationHistory = [];
+        
+        console.log('Page load - nodeData:', nodeData, 'edgeData:', edgeData);
 
         // Load conversation history from localStorage
         function loadConversationHistory() {
@@ -384,7 +678,7 @@
                 // Update graph if nodes/edges are provided
                 if (data.nodes && data.edges && data.nodes.length > 0) {
                     console.log('Updating graph with nodes:', data.nodes, 'edges:', data.edges);
-                    updateGraph(data.nodes, data.edges, data.filename_base);
+                    updateGraph(data.nodes, data.edges, data.filename_base, data.instruction);
                 } else {
                     console.log('No graph data in response:', data);
                 }
@@ -400,15 +694,18 @@
         }
 
         // Update the graph with new data
-        function updateGraph(nodes, edges, filename_base = null) {
+        function updateGraph(nodes, edges, filename_base = null, instruction = null) {
             // Make sure graph container and controls are visible
             const graphContainer = document.getElementById('graph-container');
+            const controlsInspectorRow = document.getElementById('controls-inspector-row');
             const graphControls = document.getElementById('graph-controls-area');
             const saveArea = document.getElementById('save-area');
-            const placeholderText = document.getElementById('placeholder-text');
             
             if (graphContainer) {
                 graphContainer.style.display = 'block';
+            }
+            if (controlsInspectorRow) {
+                controlsInspectorRow.style.display = 'flex';
             }
             if (graphControls) {
                 graphControls.style.display = 'block';
@@ -417,10 +714,14 @@
                 saveArea.style.display = 'block';
                 // Update save form with current data
                 const filenameInput = document.getElementById('filename-base-input');
+                const instructionInput = document.getElementById('instruction-input');
                 const nodesInput = document.getElementById('nodes-input');
                 const edgesInput = document.getElementById('edges-input');
                 if (filenameInput && filename_base) {
                     filenameInput.value = filename_base || '';
+                }
+                if (instructionInput && instruction) {
+                    instructionInput.value = instruction || '';
                 }
                 if (nodesInput && nodes) {
                     // Filter out undefined values
@@ -437,9 +738,6 @@
                     });
                     edgesInput.value = JSON.stringify(edgeObjects);
                 }
-            }
-            if (placeholderText) {
-                placeholderText.style.display = 'none';
             }
             
             // Update nodeData for customize symbols to work
@@ -460,21 +758,26 @@
                         }
                     });
                     
-                    populateNodeCustomizer(nodes);
+                    // Node inspector uses live selection; no bulk population needed
                 }).catch(err => {
                     console.error('Failed to initialize graph:', err);
                 });
             } else {
                 // Update existing graph
                 cy.elements().remove();
-                
-                // Add new elements
-                nodes.forEach(id => {
-                    cy.add({ data: { id, label: id, svgUrl: null } });
+
+                // Normalize nodes to {id,label,imageUrl}
+                const normalizedNodes = (nodes || [])
+                    .map(n => typeof n === 'string' ? { id: n, label: n, imageUrl: null } : { id: n?.id, label: n?.label || n?.id, imageUrl: n?.imageUrl || null })
+                    .filter(n => n.id);
+
+                // Add new nodes
+                normalizedNodes.forEach(n => {
+                    cy.add({ data: { id: n.id, label: n.label, imageUrl: n.imageUrl || null } });
                 });
-                
+
                 // Convert edges to proper format and add them
-                edges.forEach(edge => {
+                (edges || []).forEach(edge => {
                     let source, target;
                     if (Array.isArray(edge)) {
                         // Tuple format [source, target]
@@ -495,30 +798,28 @@
                         });
                     }
                 });
-                
-                // Fetch SVG data for nodes
-                nodes.forEach(async (nodeId) => {
-                    const symbol = classifyNode(nodeId);
-                    if (symbol && symbol.svgUrl) {
+
+                // Apply imageUrl via fuzzy style if not already provided
+                normalizedNodes.forEach(async (n) => {
+                    const node = cy.getElementById(n.id);
+                    if (!node || node.length === 0) return;
+                    if (n.imageUrl) {
+                        node.data('imageUrl', n.imageUrl);
+                    } else {
                         try {
-                            const response = await fetch(symbol.svgUrl);
-                            if (response.ok) {
-                                const svgText = await response.text();
-                                const dataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgText);
-                                const node = cy.getElementById(nodeId);
-                                if (node.length > 0) {
-                                    node.data('svgDataUri', dataUri);
-                                }
+                            const style = await getNodeStyle(n.id);
+                            if (style && style.backgroundImage) {
+                                node.data('imageUrl', style.backgroundImage);
                             }
-                        } catch (err) {
-                            console.error('Failed to fetch symbol for', nodeId, ':', err);
+                        } catch (e) {
+                            console.warn('Could not resolve style for node', n.id, e);
                         }
                     }
                 });
                 
                 // Re-layout
                 cy.layout({ name: 'cose', animate: true, animationDuration: 500 }).run();
-                populateNodeCustomizer(nodes);
+                // Node inspector uses live selection; no bulk population needed
             }
         }
 
@@ -531,31 +832,39 @@
             
             // Setup chat input handlers
             const chatInput = document.getElementById('chat-input');
-            const chatSendBtn = document.getElementById('chat-send-btn');
             
-            if (chatInput && chatSendBtn) {
+            if (chatInput) {
                 // Auto-grow textarea
                 chatInput.addEventListener('input', function() {
                     this.style.height = 'auto';
                     this.style.height = Math.min(this.scrollHeight, 120) + 'px';
                 });
                 
-                // Send on Enter (but not Shift+Enter)
+                // Send on Enter (but not Shift+Enter for multi-line)
                 chatInput.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         sendMessage();
                     }
                 });
-                
-                // Send button click
-                chatSendBtn.addEventListener('click', sendMessage);
             }
             
             // Initialize graph if nodes exist
             if (nodeData && nodeData.length > 0) {
                 cy = await initGraphViewer('graph-container', nodeData, edgeData);
-                await populateNodeCustomizer();
+                // Only apply default L→R layout if there are no saved positions
+                const savedPositions = localStorage.getItem('graphNodePositions');
+                if (!savedPositions) {
+                    applyDefaultLayout();
+                }
+            }
+
+            // Render inspector initially with no selection
+            await renderInspector();
+            
+            // Initialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
             }
         });
         
@@ -610,71 +919,240 @@
             cy.layout(layoutConfig).run();
         }
         
-        function toggleCustomizer() {
-            const customizer = document.getElementById('symbol-customizer');
-            if (customizer) {
-                customizer.style.display = customizer.style.display === 'none' ? 'block' : 'none';
+        // Apply default L→R layout
+        function applyDefaultLayout() {
+            if (!cy) return;
+            const layoutConfig = {
+                name: 'dagre',
+                rankDir: 'LR',
+                nodeSep: 80,
+                rankSep: 120,
+                edgeSep: 20,
+                ranker: 'network-simplex',
+                animate: true,
+                animationDuration: 500,
+                fit: true,
+                padding: 50
+            };
+            cy.layout(layoutConfig).run();
+        }
+        
+        // Node Inspector logic (always visible)
+        let selectedNodeId = null;
+        let currentSymbolValue = '';
+        
+        async function renderInspector() {
+            const idInput = document.getElementById('inspector-node-id');
+            const labelInput = document.getElementById('inspector-node-label');
+            const selectEl = document.getElementById('inspector-symbol-select');
+            const selectText = document.getElementById('symbol-select-text');
+            const dropdownMenu = document.getElementById('symbol-dropdown-menu');
+            const uploadEl = document.getElementById('inspector-upload');
+            if (!idInput || !labelInput || !selectEl || !uploadEl) return;
+
+            // No selection: blank and disabled
+            if (!selectedNodeId) {
+                idInput.value = '';
+                labelInput.value = '';
+                labelInput.disabled = true;
+                uploadEl.disabled = true;
+                selectEl.style.opacity = '0.5';
+                selectEl.style.pointerEvents = 'none';
+                selectText.innerHTML = '-- Auto --';
+                currentSymbolValue = '';
+                return;
             }
+
+            // Selected: populate and enable
+            const node = cy?.getElementById(selectedNodeId);
+            const label = (node && node.length > 0) ? (node.data('label') || selectedNodeId) : selectedNodeId;
+            idInput.value = selectedNodeId;
+            labelInput.value = label;
+            labelInput.disabled = false;
+            uploadEl.disabled = false;
+            selectEl.style.opacity = '1';
+            selectEl.style.pointerEvents = 'auto';
+
+            try {
+                const symbols = await getAvailableSymbols();
+                const bestSymbol = findBestSymbol(label);
+                currentSymbolValue = bestSymbol || '';
+                
+                // Update selected display
+                if (bestSymbol) {
+                    selectText.innerHTML = `<img src="/static/symbols/${bestSymbol}.png" style="width: 28px; height: 28px; object-fit: cover; vertical-align: middle; border-radius: 3px;"> ${bestSymbol}`;
+                } else {
+                    selectText.innerHTML = '-- Auto (Fuzzy Match) --';
+                }
+                
+                // Populate dropdown menu
+                dropdownMenu.innerHTML = 
+                    '<div class="symbol-option" data-value="" style="padding: 0.5rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem;">-- Auto (Fuzzy Match) --</div>' +
+                    symbols.map(s => `
+                        <div class="symbol-option" data-value="${s}" style="padding: 0.5rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; ${s === bestSymbol ? 'background: var(--primary-blue-light);' : ''}">
+                            <img src="/static/symbols/${s}.png" style="width: 36px; height: 36px; object-fit: cover; border-radius: 3px; flex-shrink: 0;">
+                            <span>${s}</span>
+                        </div>
+                    `).join('');
+                
+                // Add hover effects and click handlers
+                const options = dropdownMenu.querySelectorAll('.symbol-option');
+                options.forEach(opt => {
+                    opt.addEventListener('mouseenter', () => {
+                        opt.style.background = 'var(--primary-blue-light)';
+                    });
+                    opt.addEventListener('mouseleave', () => {
+                        if (opt.dataset.value !== currentSymbolValue) {
+                            opt.style.background = 'white';
+                        }
+                    });
+                    opt.addEventListener('click', () => {
+                        const value = opt.dataset.value;
+                        currentSymbolValue = value;
+                        if (value) {
+                            selectText.innerHTML = `<img src="/static/symbols/${value}.png" style="width: 28px; height: 28px; object-fit: cover; vertical-align: middle; border-radius: 3px;"> ${value}`;
+                        } else {
+                            selectText.innerHTML = '-- Auto (Fuzzy Match) --';
+                        }
+                        dropdownMenu.style.display = 'none';
+                        updateNodeSymbol(selectedNodeId, value);
+                    });
+                });
+            } catch (e) {
+                console.warn('Failed to load symbols for inspector:', e);
+                selectText.innerHTML = '-- Auto --';
+                currentSymbolValue = '';
+            }
+
+            // Toggle dropdown on click
+            selectEl.onclick = (e) => {
+                e.stopPropagation();
+                const isVisible = dropdownMenu.style.display !== 'none';
+                
+                if (isVisible) {
+                    dropdownMenu.style.display = 'none';
+                } else {
+                    // Show dropdown and position it intelligently
+                    dropdownMenu.style.display = 'block';
+                    
+                    // Check if dropdown would overflow viewport
+                    const rect = selectEl.getBoundingClientRect();
+                    const dropdownHeight = dropdownMenu.offsetHeight;
+                    const spaceBelow = window.innerHeight - rect.bottom;
+                    const spaceAbove = rect.top;
+                    
+                    // If not enough space below but more space above, position it above
+                    if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+                        dropdownMenu.style.top = 'auto';
+                        dropdownMenu.style.bottom = '100%';
+                        dropdownMenu.style.marginTop = '0';
+                        dropdownMenu.style.marginBottom = '2px';
+                    } else {
+                        dropdownMenu.style.top = '100%';
+                        dropdownMenu.style.bottom = 'auto';
+                        dropdownMenu.style.marginTop = '2px';
+                        dropdownMenu.style.marginBottom = '0';
+                    }
+                }
+            };
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!selectEl.contains(e.target) && !dropdownMenu.contains(e.target)) {
+                    dropdownMenu.style.display = 'none';
+                }
+            });
+
+            // Bind other events
+            uploadEl.onchange = (e) => uploadCustomIcon(selectedNodeId, e.target);
+            labelInput.onchange = async (e) => {
+                const newLabel = e.target.value.trim() || selectedNodeId;
+                if (node && node.length > 0) {
+                    node.data('label', newLabel);
+                    if (!currentSymbolValue) {
+                        const style = await getNodeStyle(newLabel);
+                        if (style?.backgroundImage) node.data('imageUrl', style.backgroundImage);
+                    }
+                }
+            };
+        }
+
+        function setSelectedNode(nodeId) {
+            selectedNodeId = nodeId || null;
+            renderInspector();
         }
         
         function syncGraphState() {
-            // Capture current graph state with custom icons before save
+            // Capture current graph state with custom icons and positions before save
             if (!cy) return true;
             
             const nodesInput = document.getElementById('nodes-input');
+            const edgesInput = document.getElementById('edges-input');
+            
             const nodes = cy.nodes().map(node => ({
                 id: node.data('id'),
                 label: node.data('label'),
-                imageUrl: node.data('imageUrl')
+                imageUrl: node.data('imageUrl'),
+                position: node.position()  // Include node position
+            }));
+            
+            const edges = cy.edges().map(edge => ({
+                source: edge.data('source'),
+                target: edge.data('target')
             }));
             
             if (nodesInput) {
                 nodesInput.value = JSON.stringify(nodes);
             }
             
+            if (edgesInput) {
+                edgesInput.value = JSON.stringify(edges);
+            }
+            
             return true; // Allow form submission to continue
         }
         
-        async function populateNodeCustomizer(nodes = null) {
-            const container = document.getElementById('node-customizer-list');
-            if (!container) return;
+        // Save graph via AJAX without page redirect
+        async function saveGraphAjax() {
+            syncGraphState();
             
-            const nodesToCustomize = nodes || nodeData;
-            if (!nodesToCustomize || nodesToCustomize.length === 0) return;
+            const graphIdInput = document.getElementById('graph-id-input');
+            const filenamInput = document.getElementById('filename-base-input');
+            const instructionInput = document.getElementById('instruction-input');
+            const nodesInput = document.getElementById('nodes-input');
+            const edgesInput = document.getElementById('edges-input');
             
-            // Get available symbols
-            const availableSymbols = await getAvailableSymbols();
+            const formData = new FormData();
+            if (graphIdInput?.value) formData.append('graph_id', graphIdInput.value);
+            if (filenamInput?.value) formData.append('filename_base', filenamInput.value);
+            if (instructionInput?.value) formData.append('instruction', instructionInput.value);
+            if (nodesInput?.value) formData.append('nodes', nodesInput.value);
+            if (edgesInput?.value) formData.append('edges', edgesInput.value);
             
-            container.innerHTML = '';
-            nodesToCustomize.forEach(nodeId => {
-                const bestSymbol = findBestSymbol(nodeId);
-                const div = document.createElement('div');
-                div.style.cssText = 'margin-bottom:15px;padding:10px;border:1px solid #eee;background:#f9f9f9;border-radius:4px';
+            try {
+                const response = await fetch('/save-graph', {
+                    method: 'POST',
+                    body: formData
+                });
                 
-                div.innerHTML = `
-                    <strong>${nodeId}</strong> 
-                    <span style="margin-left:10px;color:#666">(Currently: <em>${bestSymbol || 'default'}</em>)</span>
-                    <br>
-                    <label style="display:inline-block;margin-top:5px;margin-right:15px">
-                        Symbol:
-                        <select onchange="updateNodeSymbol('${nodeId}', this.value)" style="margin-left:5px;padding:4px;width:250px">
-                            <option value="">-- Auto (Fuzzy Match) --</option>
-                            ${availableSymbols.map(sym => 
-                                `<option value="${sym}" ${sym === bestSymbol ? 'selected' : ''}>${sym}</option>`
-                            ).join('')}
-                        </select>
-                    </label>
-                    <br>
-                    <label style="display:inline-block;margin-top:8px">
-                        Or upload custom icon:
-                        <input type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" 
-                               onchange="uploadCustomIcon('${nodeId}', this)" 
-                               style="margin-left:5px;padding:4px;font-size:0.9em">
-                    </label>
-                `;
-                container.appendChild(div);
-            });
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // Update graph_id if this was a new save
+                    if (data.graph_id && graphIdInput) {
+                        graphIdInput.value = data.graph_id;
+                    }
+                    addMessage('ai', '✓ Graph saved successfully!');
+                } else {
+                    addMessage('ai', 'Error saving graph: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                addMessage('ai', 'Error saving graph: ' + error.message);
+            }
         }
+        
+        // Removed populateNodeCustomizer: replaced by on-demand Node Inspector
         
         async function updateNodeSymbol(nodeId, symbolName) {
             const node = cy.getElementById(nodeId);
@@ -708,8 +1186,9 @@
             if (!file) return;
             
             // Show loading indicator
-            const originalText = inputElement.parentElement.textContent;
-            inputElement.parentElement.innerHTML = 'Uploading...';
+            const parent = inputElement.parentElement;
+            const originalHTML = parent.innerHTML;
+            parent.innerHTML = 'Uploading...';
             
             try {
                 const formData = new FormData();
@@ -733,9 +1212,10 @@
                         node.data('imageUrl', data.path);
                         console.log('Custom icon uploaded and applied to', nodeId);
                     }
-                    
-                    // Repopulate customizer to reset UI
-                    await populateNodeCustomizer();
+                    // Refresh inspector UI if selected
+                    if (selectedNodeId === nodeId) {
+                        await renderInspector();
+                    }
                     alert('Custom icon uploaded successfully!');
                 } else {
                     throw new Error(data.error || 'Upload failed');
@@ -743,49 +1223,70 @@
             } catch (err) {
                 console.error('Failed to upload custom icon:', err);
                 alert('Failed to upload icon: ' + err.message);
-                // Repopulate customizer to reset UI
-                await populateNodeCustomizer();
+            } finally {
+                // Restore UI
+                parent.innerHTML = originalHTML;
+                // Rebind onchange after restore
+                const restoredInput = parent.querySelector('input[type="file"]');
+                if (restoredInput) {
+                    restoredInput.onchange = (e) => uploadCustomIcon(nodeId, e.target);
+                }
             }
         }
     </script>
 
     <!-- Help Modal -->
-    <div id="help-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-        <div style="background: white; border-radius: 8px; padding: 30px; max-width: 600px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0;">How to Use</h2>
-                <button onclick="closeHelpModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
+    <div id="help-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>How to Use</h2>
+                <button onclick="closeHelpModal()" class="modal-close">&times;</button>
             </div>
             
-            <div style="color: #333; line-height: 1.6;">
+            <div class="modal-body">
                 <h3>Getting Started</h3>
-                <p><strong>1. Describe your P&ID:</strong> Write a description of your process flow diagram in the text box (e.g., "pump feeds water through a filter to a tank")</p>
+                <p><strong>1. Describe Your System:</strong> Type a description of your process in the chat box (e.g., "pump feeds water through a heat exchanger to a storage tank")</p>
                 
-                <p><strong>2. Generate:</strong> Send your message to generate a diagram. The AI will create nodes and connections based on your description.</p>
+                <p><strong>2. Generate:</strong> Press Enter to send. The AI will create a diagram with nodes and connections based on your description.</p>
                 
-                <p><strong>3. View & Edit:</strong> The diagram appears on the left. You can:</p>
-                <ul style="margin: 10px 0;">
-                    <li><strong>Drag nodes</strong> to reposition them</li>
-                    <li><strong>Change layouts</strong> using the Layout dropdown for better organization</li>
-                    <li><strong>Zoom & pan</strong> to navigate the diagram</li>
+                <p><strong>3. Interact with the Diagram:</strong></p>
+                <ul>
+                    <li><strong>Navigate:</strong> Use the toolbar buttons to Fit, Center, Zoom In/Out</li>
+                    <li><strong>Drag nodes</strong> to reposition them (positions are saved automatically)</li>
+                    <li><strong>Click a node</strong> to open the Node Inspector and customize it</li>
+                    <li><strong>Click blank space</strong> to deselect</li>
                 </ul>
                 
-                <p><strong>4. Customize:</strong> Click "Customize Symbols" to change how equipment appears (pump, tank, valve, etc.)</p>
+                <p><strong>4. Customize Nodes:</strong> The Node Inspector lets you:</p>
+                <ul>
+                    <li><strong>Edit labels</strong> to rename equipment</li>
+                    <li><strong>Change symbols</strong> from 250+ available icons (or let AI auto-match)</li>
+                    <li><strong>Upload custom icons</strong> for specialized equipment</li>
+                </ul>
                 
-                <p><strong>5. Save:</strong> Save your diagram to your account using the "Save to my account" button</p>
+                <p><strong>5. Save:</strong> Click the Save button (💾 icon) to save your work. Your diagram, positions, and customizations are all preserved.</p>
                 
                 <h3>Tips</h3>
-                <ul style="margin: 10px 0;">
-                    <li>Use technical terms for better results (pump, valve, heat exchanger, separator, etc.)</li>
-                    <li>Describe the flow direction and connections clearly</li>
-                    <li>Try different layouts if the diagram looks chaotic</li>
-                    <li>You can manually adjust node positions by dragging</li>
+                <ul>
+                    <li>Use technical terms for better AI recognition (e.g., centrifugal pump, ball valve, shell-and-tube heat exchanger)</li>
+                    <li>Describe connections clearly ("pump outlet connects to valve inlet")</li>
+                    <li>Refine iteratively - chat with the AI to add, remove, or modify components</li>
+                    <li>Node positions snap to a grid for clean alignment</li>
+                    <li>All changes are saved automatically when you click Save</li>
                 </ul>
             </div>
         </div>
     </div>
 
     <script>
+        // Graph click handlers from graph_viewer.js
+        window.onGraphNodeClick = function(nodeId) {
+            setSelectedNode(nodeId);
+        };
+        window.onGraphBlankClick = function() {
+            setSelectedNode(null);
+        };
+
         function openHelpModal() {
             document.getElementById('help-modal').style.display = 'flex';
         }
@@ -794,14 +1295,27 @@
             document.getElementById('help-modal').style.display = 'none';
         }
         
-        document.getElementById('help-btn').addEventListener('click', openHelpModal);
+        // Setup help button when DOM is ready
+        const helpBtn = document.getElementById('help-btn');
+        if (helpBtn) {
+            helpBtn.addEventListener('click', openHelpModal);
+        }
         
         // Close modal when clicking outside of it
-        document.getElementById('help-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeHelpModal();
-            }
-        });
+        const helpModal = document.getElementById('help-modal');
+        if (helpModal) {
+            helpModal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeHelpModal();
+                }
+            });
+        }
+
+        // Inspector clear selection button hookup
+        const inspClear = document.getElementById('inspector-clear');
+        if (inspClear) {
+            inspClear.addEventListener('click', () => setSelectedNode(null));
+        }
     </script>
 </body>
 </html>

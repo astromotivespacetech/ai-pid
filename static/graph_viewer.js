@@ -1,4 +1,20 @@
 // Graph visualization using Cytoscape.js
+
+// Save node positions to localStorage
+function saveNodePositions(cy) {
+    const positions = {};
+    cy.nodes().forEach(node => {
+        positions[node.id()] = node.position();
+    });
+    localStorage.setItem('graphNodePositions', JSON.stringify(positions));
+}
+
+// Load node positions from localStorage
+function loadNodePositions() {
+    const saved = localStorage.getItem('graphNodePositions');
+    return saved ? JSON.parse(saved) : {};
+}
+
 async function initGraphViewer(containerId, nodes, edges) {
     // Ensure custom symbols (if any) are loaded before styling nodes
     if (typeof ensureSymbolsLoaded === 'function') {
@@ -13,6 +29,9 @@ async function initGraphViewer(containerId, nodes, edges) {
 
     // Prepare elements for Cytoscape
     const elements = [];
+    
+    // Load saved node positions from localStorage
+    const positionsMap = loadNodePositions();
     
     // Add nodes (with async getNodeStyle)
     if (nodes && Array.isArray(nodes)) {
@@ -41,13 +60,20 @@ async function initGraphViewer(containerId, nodes, edges) {
             }
             
             // Create node with PNG image URL stored in data so we can access it in stylesheet
-            elements.push({
-                data: { 
-                    id: nodeId, 
-                    label: nodeId,
-                    imageUrl: imageUrl  // Store PNG image URL in data
-                }
-            });
+            const nodeData = { 
+                id: nodeId, 
+                label: nodeId,
+                imageUrl: imageUrl  // Store PNG image URL in data
+            };
+            
+            const nodeElement = { data: nodeData };
+            
+            // Add saved position if available
+            if (positionsMap[nodeId]) {
+                nodeElement.position = positionsMap[nodeId];
+            }
+            
+            elements.push(nodeElement);
         }
     }
     
@@ -75,6 +101,8 @@ async function initGraphViewer(containerId, nodes, edges) {
     }
 
     // Initialize Cytoscape
+    const hasSavedPositions = Object.keys(positionsMap).length > 0;
+    
     const cy = cytoscape({
         container: container,
         elements: elements,
@@ -82,16 +110,17 @@ async function initGraphViewer(containerId, nodes, edges) {
             {
                 selector: 'node',
                 style: {
-                    'width': 60,
-                    'height': 60,
+                    'width': 80,
+                    'height': 80,
                     'background-color': 'transparent',
                     'background-opacity': 0,
                     'border-width': 0,
                     'border-color': 'transparent',
-                    'background-fit': 'cover',
+                    'background-fit': 'contain',
                     'background-repeat': 'no-repeat',
                     'background-clip': 'none',
                     'background-image-opacity': 1,
+                    'background-blend-mode': 'multiply',
                     'bounds-expansion': 10,
                     'shape': 'rectangle',
                     // Use data mapper to get background-image from imageUrl data field
@@ -123,17 +152,19 @@ async function initGraphViewer(containerId, nodes, edges) {
                 }
             }
         ],
-        layout: {
-            name: 'dagre',  // Directed Acyclic Graph layout - great for flow diagrams
-            rankDir: 'LR',  // Left-to-Right (use 'TB' for top-to-bottom)
-            padding: 50,
-            nodeSep: 80,    // Horizontal separation between nodes
-            rankSep: 120,   // Vertical separation between ranks
-            edgeSep: 20,    // Separation between edges
-            ranker: 'network-simplex',  // Tightest layout
-            animate: true,
-            animationDuration: 500
-        },
+        layout: hasSavedPositions ? 
+            { name: 'preset' } :  // Use preset layout (no repositioning) if we have saved positions
+            {
+                name: 'dagre',  // Directed Acyclic Graph layout - great for flow diagrams
+                rankDir: 'LR',  // Left-to-Right (use 'TB' for top-to-bottom)
+                padding: 50,
+                nodeSep: 80,    // Horizontal separation between nodes
+                rankSep: 120,   // Vertical separation between ranks
+                edgeSep: 20,    // Separation between edges
+                ranker: 'network-simplex',  // Tightest layout
+                animate: true,
+                animationDuration: 500
+            },
         wheelSensitivity: 0.2,
         minZoom: 0.3,
         maxZoom: 3
@@ -179,12 +210,33 @@ async function initGraphViewer(containerId, nodes, edges) {
 
     cy.on('dragfree', 'node', (evt) => {
         snapNodeToGrid(evt.target);
+        saveNodePositions(cy);
+    });
+    
+    // Also save positions when layout changes
+    cy.on('layoutstop', () => {
+        saveNodePositions(cy);
     });
 
     // Add interaction
     cy.on('tap', 'node', function(evt) {
         const node = evt.target;
-        console.log('Node clicked:', node.id());
+        if (typeof window !== 'undefined' && typeof window.onGraphNodeClick === 'function') {
+            try { 
+                window.onGraphNodeClick(node.id()); 
+            } catch (e) { 
+                console.warn('onGraphNodeClick handler error', e); 
+            }
+        }
+    });
+
+    // Clicking on the background can be used to close the inspector
+    cy.on('tap', function(evt) {
+        if (evt.target === cy) {
+            if (typeof window !== 'undefined' && typeof window.onGraphBlankClick === 'function') {
+                try { window.onGraphBlankClick(); } catch (e) { /* no-op */ }
+            }
+        }
     });
 
     // Fit viewport to content

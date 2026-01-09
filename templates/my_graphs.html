@@ -5,52 +5,282 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Saved Graphs - AI PI&D Tool</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            background: var(--neutral-50);
+            padding: 0;
+            margin: 0;
+        }
+        
+        .page-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .page-header {
+            background: white;
+            border-radius: var(--radius-xl);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--neutral-200);
+        }
+        
+        .page-header h1 {
+            margin-bottom: 1rem;
+        }
+        
+        .user-banner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: var(--primary-blue-ultralight);
+            border: 1px solid var(--primary-blue-light);
+            border-radius: var(--radius-lg);
+            margin-bottom: 1.5rem;
+        }
+        
+        .user-info-text {
+            color: var(--neutral-700);
+            font-size: 0.9375rem;
+        }
+        
+        .user-info-text strong {
+            color: var(--neutral-900);
+            font-weight: 600;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .section-title {
+            margin-bottom: 1.5rem;
+        }
+        
+        .graphs-table-container {
+            background: white;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--neutral-200);
+            overflow: hidden;
+        }
+        
+        .graphs-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .graphs-table thead {
+            background: var(--neutral-100);
+        }
+        
+        .graphs-table th {
+            padding: 1rem 1.25rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--neutral-700);
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+            border-bottom: 2px solid var(--neutral-200);
+        }
+        
+        .graphs-table tbody tr {
+            border-bottom: 1px solid var(--neutral-200);
+            transition: background-color var(--transition-fast);
+        }
+        
+        .graphs-table tbody tr:hover {
+            background: var(--neutral-50);
+        }
+        
+        .graphs-table tbody tr:last-child {
+            border-bottom: none;
+        }
+        
+        .graphs-table td {
+            padding: 1.25rem;
+            color: var(--neutral-700);
+            font-size: 0.9375rem;
+        }
+        
+        .graph-description {
+            color: var(--neutral-900);
+            font-weight: 500;
+            max-width: 500px;
+        }
+        
+        .graph-meta {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem 0.625rem;
+            background: var(--neutral-100);
+            border-radius: var(--radius-full);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--neutral-700);
+        }
+        
+        .graph-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+        
+        .action-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem;
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            color: var(--neutral-700);
+        }
+        
+        .action-link:hover {
+            background: var(--primary-blue-light);
+            color: var(--primary-blue);
+        }
+        
+        .delete-form {
+            display: inline-flex;
+            align-items: center;
+            margin: 0;
+        }
+        
+        .delete-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: var(--error);
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+        }
+        
+        .delete-btn:hover {
+            background: var(--error-bg);
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .empty-state {
+            padding: 4rem 2rem;
+            text-align: center;
+            background: white;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--neutral-200);
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+        
+        .empty-state h3 {
+            color: var(--neutral-900);
+            margin-bottom: 0.5rem;
+        }
+        
+        .empty-state p {
+            color: var(--neutral-600);
+            font-size: 1.125rem;
+            margin-bottom: 1.5rem;
+        }
+    </style>
 </head>
 <body>
-    <h1>My Saved PI&D Graphs</h1>
-    {% if user %}
-    <div style="padding:8px;margin-bottom:12px;border:1px solid #ddd;background:#f8fff8">
-        Signed in as <strong>{{ user.display_name or user.email or user.username }}</strong>
-        <span style="margin-left:8px"><a href="/logout">Logout</a></span>
-        <span style="margin-left:8px"><a href="/">← Back to Generator</a></span>
-    </div>
-    {% endif %}
+    <div class="page-container">
+        <div class="page-header">
+            <h1>My Saved PI&D Graphs</h1>
+            
+            {% if user %}
+            <div class="user-banner">
+                <div class="user-info-text">
+                    Signed in as <strong>{{ user.display_name or user.email or user.username }}</strong>
+                </div>
+                <div class="header-actions">
+                    <a href="/" class="action-link">← Back to Generator</a>
+                    <a href="/logout" class="action-link">Logout</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
 
-    <h2>Your Saved Graphs</h2>
-    
-    {% if graphs %}
-    <table style="width:100%;border-collapse:collapse;margin-top:20px">
-        <thead>
-            <tr style="background:#f0f0f0;border-bottom:2px solid #ddd">
-                <th style="padding:10px;text-align:left">Created</th>
-                <th style="padding:10px;text-align:left">Description</th>
-                <th style="padding:10px;text-align:left">Nodes</th>
-                <th style="padding:10px;text-align:left">Edges</th>
-                <th style="padding:10px;text-align:left">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for graph in graphs %}
-            <tr style="border-bottom:1px solid #eee">
-                <td style="padding:10px">{{ graph.created_at[:10] }}</td>
-                <td style="padding:10px">{{ graph.instruction[:50] }}{% if graph.instruction|length > 50 %}...{% endif %}</td>
-                <td style="padding:10px">{{ graph.nodes|length if graph.nodes else 0 }}</td>
-                <td style="padding:10px">{{ graph.edges|length if graph.edges else 0 }}</td>
-                <td style="padding:10px">
-                    <a href="/load-graph/{{ graph.id }}" style="margin-right:10px">Load</a>
-                    <a href="/download-graph/{{ graph.id }}" style="margin-right:10px">Download</a>
-                    <form action="/delete-graph/{{ graph.id }}" method="post" style="display:inline" onsubmit="return confirm('Are you sure you want to delete this graph?')">
-                        <button type="submit" style="background:none;border:none;color:#c00;cursor:pointer;text-decoration:underline;padding:0">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div style="padding:20px;margin-top:20px;border:1px solid #ddd;background:#f9f9f9">
-        <p>You haven't saved any graphs yet. <a href="/">Create your first PI&D graph</a>.</p>
+        <h2 class="section-title">Your Saved Graphs</h2>
+        
+        {% if graphs %}
+        <div class="graphs-table-container">
+            <table class="graphs-table">
+                <thead>
+                    <tr>
+                        <th>Created</th>
+                        <th>Description</th>
+                        <th>Nodes</th>
+                        <th>Edges</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for graph in graphs %}
+                    <tr>
+                        <td>{{ graph.created_at[:10] }}</td>
+                        <td>
+                            <div class="graph-description">
+                                {{ graph.instruction[:80] }}{% if graph.instruction|length > 80 %}...{% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="graph-meta">{{ graph.nodes|length if graph.nodes else 0 }}</span>
+                        </td>
+                        <td>
+                            <span class="graph-meta">{{ graph.edges|length if graph.edges else 0 }}</span>
+                        </td>
+                        <td>
+                            <div class="graph-actions">
+                                <a href="/load-graph/{{ graph.id }}" class="action-link" title="Load Graph"><i data-lucide="folder-open" style="width: 18px; height: 18px;"></i></a>
+                                <a href="/download-graph/{{ graph.id }}" class="action-link" title="Download Graph"><i data-lucide="download" style="width: 18px; height: 18px;"></i></a>
+                                <form action="/delete-graph/{{ graph.id }}" method="post" class="delete-form" onsubmit="return confirm('Are you sure you want to delete this graph?')">
+                                    <button type="submit" class="delete-btn" title="Delete Graph"><i data-lucide="trash-2" style="width: 18px; height: 18px;"></i></button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">📊</div>
+            <h3>No saved graphs yet</h3>
+            <p>You haven't saved any graphs yet.</p>
+            <a href="/">
+                <button>Create Your First PI&D Graph</button>
+            </a>
+        </div>
+        {% endif %}
     </div>
-    {% endif %}
+    <script>
+        // Initialize Lucide icons
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    </script>
 </body>
 </html>
