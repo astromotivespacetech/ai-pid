@@ -187,21 +187,93 @@
             font-weight: 600;
         }
 
+        .login-landing {
+            display: flex;
+            gap: 3rem;
+            max-width: 1200px;
+            margin: 2rem auto;
+            align-items: flex-start;
+        }
+
         .login-prompt {
-            padding: 4rem 3rem;
+            padding: 3rem 2.5rem;
             text-align: center;
             background: white;
             border-radius: var(--radius-xl);
             box-shadow: var(--shadow-xl);
-            max-width: 600px;
-            margin: 4rem auto;
+            min-width: 400px;
+            flex-shrink: 0;
+        }
+
+        .login-prompt h2 {
+            font-size: 1.75rem;
+            color: var(--neutral-900);
+            margin: 0 0 0.5rem 0;
         }
 
         .login-prompt p {
-            font-size: 1.25rem;
-            color: var(--neutral-700);
+            font-size: 1rem;
+            color: var(--neutral-600);
             margin-bottom: 2rem;
             line-height: 1.6;
+        }
+
+        .landing-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .feature-section {
+            background: white;
+            border-radius: var(--radius-xl);
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+        }
+
+        .feature-section h3 {
+            font-size: 1.25rem;
+            color: var(--neutral-900);
+            margin: 0 0 1rem 0;
+        }
+
+        .feature-section p {
+            color: var(--neutral-700);
+            line-height: 1.7;
+            margin-bottom: 1rem;
+        }
+
+        .example-box {
+            background: var(--neutral-50);
+            border: 1px solid var(--neutral-200);
+            border-radius: var(--radius-lg);
+            padding: 1rem;
+            margin: 0.75rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: var(--neutral-800);
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 1rem 0;
+        }
+
+        .feature-list li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+            color: var(--neutral-700);
+        }
+
+        .feature-list li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--primary-blue);
+            font-weight: bold;
         }
 
         .signin-buttons {
@@ -444,28 +516,64 @@
             {% if not user %}
             {% set google_enabled = providers.get('google') if providers else False %}
             {% set github_enabled = providers.get('github') if providers else False %}
-            <div class="login-prompt">
-                <p>Welcome to the AI-Powered PI&D Tool</p>
-                <div class="signin-buttons">
-                    {% if google_enabled %}
-                    <a class="signin-btn google" href="/login/google">
-                        <svg class="signin-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                        </svg>
-                        Sign in with Google
-                    </a>
-                    {% endif %}
-                    {% if github_enabled %}
-                    <a class="signin-btn github" href="/login/github">
-                        <svg class="signin-logo" viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-                            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12c0 4.65 3.02 8.6 7.21 9.99.53.1.72-.23.72-.5 0-.25-.01-.92-.01-1.8-2.94.64-3.56-1.42-3.56-1.42-.48-1.22-1.17-1.54-1.17-1.54-.96-.65.07-.64.07-.64 1.06.08 1.62 1.1 1.62 1.1.95 1.62 2.48 1.15 3.09.88.1-.69.37-1.15.67-1.42-2.35-.27-4.82-1.18-4.82-5.24 0-1.16.41-2.1 1.09-2.84-.11-.27-.47-1.36.1-2.83 0 0 .88-.28 2.9 1.08a9.97 9.97 0 0 1 5.28 0c2.02-1.36 2.9-1.08 2.9-1.08.57 1.47.21 2.56.1 2.83.68.74 1.09 1.68 1.09 2.84 0 4.07-2.48 4.97-4.84 5.23.38.33.72.97.72 1.96 0 1.42-.01 2.57-.01 2.92 0 .27.19.61.73.5A10.53 10.53 0 0 0 22.5 12c0-5.8-4.7-10.5-10.5-10.5Z" fill="currentColor"/>
-                        </svg>
-                        Continue with GitHub
-                    </a>
-                    {% endif %}
+            <div class="login-landing">
+                <div class="login-prompt">
+                    <h2>Get Started</h2>
+                    <p>Sign in to start creating P&ID diagrams with AI</p>
+                    <div class="signin-buttons">
+                        {% if google_enabled %}
+                        <a class="signin-btn google" href="/login/google">
+                            <svg class="signin-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                            </svg>
+                            Sign in with Google
+                        </a>
+                        {% endif %}
+                        {% if github_enabled %}
+                        <a class="signin-btn github" href="/login/github">
+                            <svg class="signin-logo" viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12c0 4.65 3.02 8.6 7.21 9.99.53.1.72-.23.72-.5 0-.25-.01-.92-.01-1.8-2.94.64-3.56-1.42-3.56-1.42-.48-1.22-1.17-1.54-1.17-1.54-.96-.65.07-.64.07-.64 1.06.08 1.62 1.1 1.62 1.1.95 1.62 2.48 1.15 3.09.88.1-.69.37-1.15.67-1.42-2.35-.27-4.82-1.18-4.82-5.24 0-1.16.41-2.1 1.09-2.84-.11-.27-.47-1.36.1-2.83 0 0 .88-.28 2.9 1.08a9.97 9.97 0 0 1 5.28 0c2.02-1.36 2.9-1.08 2.9-1.08.57 1.47.21 2.56.1 2.83.68.74 1.09 1.68 1.09 2.84 0 4.07-2.48 4.97-4.84 5.23.38.33.72.97.72 1.96 0 1.42-.01 2.57-.01 2.92 0 .27.19.61.73.5A10.53 10.53 0 0 0 22.5 12c0-5.8-4.7-10.5-10.5-10.5Z" fill="currentColor"/>
+                            </svg>
+                            Continue with GitHub
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="landing-content">
+                    <div class="feature-section">
+                        <h3>🚀 Generate P&IDs from Plain English</h3>
+                        <p>Describe your process system in natural language, and let AI create professional diagrams instantly.</p>
+                        <div class="example-box">
+                            "A centrifugal pump feeds water through a control valve to a shell-and-tube heat exchanger, then to a storage tank with level control"
+                        </div>
+                        <p style="font-size: 0.9rem; color: var(--neutral-600); margin-top: 0.5rem;">→ Generates diagram with proper symbols, connections, and layout</p>
+                    </div>
+
+                    <div class="feature-section">
+                        <h3>✨ Features</h3>
+                        <ul class="feature-list">
+                            <li><strong>250+ Engineering Symbols</strong> - Pumps, valves, heat exchangers, tanks, and more</li>
+                            <li><strong>Smart Auto-Matching</strong> - AI selects the right symbols for your equipment</li>
+                            <li><strong>Custom Icons</strong> - Upload your own symbols for specialized equipment</li>
+                            <li><strong>Interactive Editing</strong> - Drag nodes, customize labels, and adjust layouts</li>
+                            <li><strong>Save & Share</strong> - Keep your work and access it anywhere</li>
+                            <li><strong>Iterative Refinement</strong> - Chat with AI to add, remove, or modify components</li>
+                        </ul>
+                    </div>
+
+                    <div class="feature-section">
+                        <h3>💡 Perfect For</h3>
+                        <ul class="feature-list">
+                            <li>Process & chemical engineers drafting system designs</li>
+                            <li>Engineering students learning P&ID conventions</li>
+                            <li>Technical documentation and proposals</li>
+                            <li>Rapid prototyping and concept validation</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
             {% else %}
