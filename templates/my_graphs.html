@@ -318,25 +318,25 @@
                     // Fetch versions
                     const response = await fetch(`/api/graphs/${graphId}/versions`);
                     const data = await response.json();
+                    
+                    // Clear the loading option
+                    selector.innerHTML = '';
+                    
                     if (data.versions && data.versions.length > 0) {
-                        // Clear the loading option
-                        selector.innerHTML = '';
-                        
                         // API returns versions in newest-first order, add them as-is
-                        data.versions.forEach((version, index) => {
+                        data.versions.forEach((version) => {
                             const option = document.createElement('option');
                             option.value = version.version_number;
                             const date = new Date(version.created_at);
                             option.textContent = `v${version.version_number} - ${date.toLocaleString()}`;
                             selector.appendChild(option);
-                            
-                            // Set first (newest) version as selected
-                            if (index === 0) {
-                                option.selected = true;
-                                // Display the description from the latest version
-                                handleVersionChange(graphId, version.version_number);
-                            }
                         });
+                        // Don't auto-select anything - leave empty so loading goes to main graph
+                    } else {
+                        const emptyOption = document.createElement('option');
+                        emptyOption.value = '';
+                        emptyOption.textContent = 'No versions';
+                        selector.appendChild(emptyOption);
                     }
                 } catch (error) {
                     console.error('Error fetching versions:', error);

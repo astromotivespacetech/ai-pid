@@ -380,6 +380,11 @@ async def save_graph_endpoint(request: Request, filename_base: str = Form(None),
     nodes = form.get("nodes")
     edges = form.get("edges")
     
+    # Debug logging
+    if nodes:
+        parsed_nodes = json_loads(nodes)
+        print(f"[Save] Received nodes: {parsed_nodes[:2] if len(parsed_nodes) > 0 else 'empty'}")  # Log first 2 nodes
+    
     # Generate filename_base if not provided
     if not filename_base:
         filename_base = f"pid_graph_{uuid.uuid4().hex[:8]}"
@@ -399,7 +404,11 @@ async def save_graph_endpoint(request: Request, filename_base: str = Form(None),
             gid = auth.save_graph(uid, filename_base, instruction or "", json_loads(nodes) if nodes else None, json_loads(edges) if edges else None)
             print(f"[Save] Created new graph id={gid} for user={uid}")
         
-        return JSONResponse({"success": True, "graph_id": gid})
+        # Get the latest version number to return it immediately
+        versions = auth.get_graph_versions(gid, uid)
+        latest_version = versions[0]['version_number'] if versions else 1
+        
+        return JSONResponse({"success": True, "graph_id": gid, "version_number": latest_version})
     except Exception as e:
         print(f"[Save] Error: {e}")
         import traceback

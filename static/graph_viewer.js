@@ -142,6 +142,15 @@ async function initGraphViewer(containerId, nodes, edges) {
                 }
             },
             {
+                selector: 'node.selected',
+                style: {
+                    'underlay-color': '#E5E7EB',
+                    'underlay-opacity': 0.8,
+                    'underlay-shape': 'roundrectangle',
+                    'underlay-padding': 12
+                }
+            },
+            {
                 selector: 'edge',
                 style: {
                     'width': 2,
@@ -240,6 +249,13 @@ async function initGraphViewer(containerId, nodes, edges) {
             if (typeof window !== 'undefined' && typeof window.onGraphBlankClick === 'function') {
                 try { window.onGraphBlankClick(); } catch (e) { /* no-op */ }
             }
+        }
+    });
+
+    // Update floating button position when panning or zooming
+    cy.on('pan zoom viewport', function() {
+        if (typeof window !== 'undefined' && typeof window.updateFloatingButtonPosition === 'function') {
+            try { window.updateFloatingButtonPosition(); } catch (e) { /* no-op */ }
         }
     });
 

@@ -231,12 +231,12 @@ def save_graph(user_id: int, filename: str, instruction: str, nodes: list, edges
 
 
 def update_graph(graph_id: int, user_id: int, filename: str, instruction: str, nodes: list, edges: list) -> int:
-    """Update an existing graph, verifying ownership and creating a version snapshot"""
+    """Update an existing graph, verifying ownership and creating a version snapshot of the NEW state"""
     conn = _conn()
     cur = conn.cursor()
     
-    # Verify ownership and get current state
-    cur.execute("SELECT user_id, instruction, nodes_json, edges_json FROM graphs WHERE id = ?", (graph_id,))
+    # Verify ownership
+    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
     row = cur.fetchone()
     if not row or row[0] != user_id:
         conn.close()
@@ -247,18 +247,19 @@ def update_graph(graph_id: int, user_id: int, filename: str, instruction: str, n
     max_version = cur.fetchone()[0]
     next_version = (max_version or 0) + 1
     
-    # Save current state as a version before updating
-    now = datetime.utcnow().isoformat()
-    cur.execute(
-        "INSERT INTO graph_versions (graph_id, version_number, instruction, nodes_json, edges_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (graph_id, next_version, row[1], row[2], row[3], now)
-    )
-    
-    # Update the graph with new data
+    # Update the graph with new data FIRST
     cur.execute(
         "UPDATE graphs SET filename = ?, instruction = ?, nodes_json = ?, edges_json = ? WHERE id = ?",
         (filename, instruction, json_dumps(nodes), json_dumps(edges), graph_id),
     )
+    
+    # THEN save the new state as a version snapshot
+    now = datetime.utcnow().isoformat()
+    cur.execute(
+        "INSERT INTO graph_versions (graph_id, version_number, instruction, nodes_json, edges_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (graph_id, next_version, instruction, json_dumps(nodes), json_dumps(edges), now)
+    )
+    
     conn.commit()
     conn.close()
     return graph_id

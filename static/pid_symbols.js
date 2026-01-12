@@ -2,7 +2,8 @@
 // All symbols are loaded dynamically from /api/symbols endpoint
 console.log('[pid_symbols.js] Loaded fuzzy matcher v2');
 
-let ALL_SYMBOLS = [];  // Loaded from API at startup
+let ALL_SYMBOLS = [];  // Full symbol objects from API (for display)
+let SYMBOL_NAMES = []; // Just the names (for fuzzy matching)
 let SYMBOLS_LOADED = false;
 
 // Light synonym map to nudge common patterns
@@ -107,7 +108,7 @@ function calculateSimilarity(str1, str2) {
 
 // Find best matching symbol from available symbols
 function findBestSymbol(nodeName) {
-    if (!ALL_SYMBOLS || ALL_SYMBOLS.length === 0) {
+    if (!SYMBOL_NAMES || SYMBOL_NAMES.length === 0) {
         console.warn('No symbols loaded');
         return null;
     }
@@ -125,18 +126,18 @@ function findBestSymbol(nodeName) {
     }
 
     // Exact match wins immediately
-    if (ALL_SYMBOLS.includes(normalized)) {
+    if (SYMBOL_NAMES.includes(normalized)) {
         return normalized;
     }
 
     // Synonym hint
     const synonym = SYNONYM_MAP[normalized];
-    if (synonym && ALL_SYMBOLS.includes(synonym)) {
+    if (synonym && SYMBOL_NAMES.includes(synonym)) {
         return synonym;
     }
 
     // Score all symbols
-    const scores = ALL_SYMBOLS.map(symbol => {
+    const scores = SYMBOL_NAMES.map(symbol => {
         try {
             const score = calculateSimilarity(normalized, symbol);
             return {
@@ -181,9 +182,12 @@ async function loadSymbols() {
         
         const data = await response.json();
         if (data.success && data.symbols) {
-            // Extract just the symbol names from the API response
-            // API returns objects with {name, category, path}, but we need just the names
-            ALL_SYMBOLS = data.symbols.map(sym => {
+            // Keep full symbol objects for display in symbol library
+            ALL_SYMBOLS = data.symbols;
+            
+            // Extract just the symbol names for fuzzy matching
+            // API returns objects with {name, category, path}, convert names to snake_case
+            SYMBOL_NAMES = data.symbols.map(sym => {
                 if (typeof sym === 'string') {
                     return sym;
                 } else if (sym.name) {
@@ -213,7 +217,7 @@ async function getNodeStyle(nodeName) {
         await loadSymbols();
     }
     
-    console.log(`[getNodeStyle] Total symbols available: ${ALL_SYMBOLS.length}`);
+    console.log(`[getNodeStyle] Total symbols available: ${SYMBOL_NAMES.length}`);
     
     // Find the best matching symbol
     const bestSymbol = findBestSymbol(nodeName);
