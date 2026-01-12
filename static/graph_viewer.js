@@ -36,15 +36,17 @@ async function initGraphViewer(containerId, nodes, edges) {
     // Add nodes (with async getNodeStyle)
     if (nodes && Array.isArray(nodes)) {
         for (const nodeOrId of nodes) {
-            let nodeId, customImageUrl;
+            let nodeId, customImageUrl, nodePosition;
             
-            // Handle both string IDs and node objects with custom imageUrl
+            // Handle both string IDs and node objects with custom imageUrl and position
             if (typeof nodeOrId === 'string') {
                 nodeId = nodeOrId;
                 customImageUrl = null;
+                nodePosition = null;
             } else if (typeof nodeOrId === 'object' && nodeOrId.id) {
                 nodeId = nodeOrId.id;
                 customImageUrl = nodeOrId.imageUrl || null;
+                nodePosition = nodeOrId.position || null;  // Get position from node object
             } else {
                 console.warn('Invalid node format:', nodeOrId);
                 continue;
@@ -68,8 +70,10 @@ async function initGraphViewer(containerId, nodes, edges) {
             
             const nodeElement = { data: nodeData };
             
-            // Add saved position if available
-            if (positionsMap[nodeId]) {
+            // Add position - prioritize position from node object, then check localStorage
+            if (nodePosition) {
+                nodeElement.position = nodePosition;
+            } else if (positionsMap[nodeId]) {
                 nodeElement.position = positionsMap[nodeId];
             }
             

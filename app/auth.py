@@ -88,6 +88,21 @@ def init_db():
         )
         """
     )
+    
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS graph_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            graph_id INTEGER NOT NULL,
+            version_number INTEGER NOT NULL,
+            instruction TEXT,
+            nodes_json TEXT,
+            edges_json TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(graph_id) REFERENCES graphs(id) ON DELETE CASCADE
+        )
+        """
+    )
     # Ensure new columns exist in users table for older DBs
     def _ensure_column(table: str, column: str, definition: str):
         cur.execute(f"PRAGMA table_info({table})")
@@ -194,6 +209,7 @@ def get_user(user_id: int) -> Optional[dict]:
 
 
 def save_graph(user_id: int, filename: str, instruction: str, nodes: list, edges: list) -> int:
+    """Create a new graph and save initial state as version 1"""
     now = datetime.utcnow().isoformat()
     conn = _conn()
     cur = conn.cursor()
@@ -201,26 +217,44 @@ def save_graph(user_id: int, filename: str, instruction: str, nodes: list, edges
         "INSERT INTO graphs (user_id, filename, instruction, nodes_json, edges_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         (user_id, filename, instruction, json_dumps(nodes), json_dumps(edges), now),
     )
-    conn.commit()
     gid = cur.lastrowid
+    
+    # Create version 1 with the initial state
+    cur.execute(
+        "INSERT INTO graph_versions (graph_id, version_number, instruction, nodes_json, edges_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (gid, 1, instruction, json_dumps(nodes), json_dumps(edges), now)
+    )
+    
+    conn.commit()
     conn.close()
     return gid
 
 
 def update_graph(graph_id: int, user_id: int, filename: str, instruction: str, nodes: list, edges: list) -> int:
-    """Update an existing graph, verifying ownership"""
+    """Update an existing graph, verifying ownership and creating a version snapshot"""
     conn = _conn()
     cur = conn.cursor()
     
-    # Verify ownership
-    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
+    # Verify ownership and get current state
+    cur.execute("SELECT user_id, instruction, nodes_json, edges_json FROM graphs WHERE id = ?", (graph_id,))
     row = cur.fetchone()
     if not row or row[0] != user_id:
         conn.close()
         raise ValueError(f"Graph {graph_id} not found or access denied")
     
-    # Update the graph
+    # Get the next version number
+    cur.execute("SELECT MAX(version_number) FROM graph_versions WHERE graph_id = ?", (graph_id,))
+    max_version = cur.fetchone()[0]
+    next_version = (max_version or 0) + 1
+    
+    # Save current state as a version before updating
     now = datetime.utcnow().isoformat()
+    cur.execute(
+        "INSERT INTO graph_versions (graph_id, version_number, instruction, nodes_json, edges_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (graph_id, next_version, row[1], row[2], row[3], now)
+    )
+    
+    # Update the graph with new data
     cur.execute(
         "UPDATE graphs SET filename = ?, instruction = ?, nodes_json = ?, edges_json = ? WHERE id = ?",
         (filename, instruction, json_dumps(nodes), json_dumps(edges), graph_id),
@@ -234,7 +268,9 @@ def get_graphs_for_user(user_id: int):
     conn = _conn()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, filename, instruction, nodes_json, edges_json, created_at FROM graphs WHERE user_id = ? ORDER BY id DESC",
+        """SELECT g.id, g.filename, g.instruction, g.nodes_json, g.edges_json, g.created_at,
+           (SELECT COUNT(*) FROM graph_versions WHERE graph_id = g.id) as version_count
+           FROM graphs g WHERE g.user_id = ? ORDER BY g.id DESC""",
         (user_id,),
     )
     rows = cur.fetchall()
@@ -249,9 +285,134 @@ def get_graphs_for_user(user_id: int):
                 "nodes": json_loads(r[3]),
                 "edges": json_loads(r[4]),
                 "created_at": r[5],
+                "version_count": r[6],
             }
         )
     return result
+
+
+def get_graph_versions(graph_id: int, user_id: int):
+    """Get all versions for a graph, verifying user ownership"""
+    conn = _conn()
+    cur = conn.cursor()
+    
+    # Verify ownership
+    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        conn.close()
+        return []
+    
+    # Get all versions
+    cur.execute(
+        "SELECT id, version_number, instruction, nodes_json, edges_json, created_at FROM graph_versions WHERE graph_id = ? ORDER BY version_number DESC",
+        (graph_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    
+    result = []
+    for r in rows:
+        result.append({
+            "id": r[0],
+            "version_number": r[1],
+            "instruction": r[2],
+            "nodes": json_loads(r[3]),
+            "edges": json_loads(r[4]),
+            "created_at": r[5],
+        })
+    return result
+
+
+def restore_graph_version(graph_id: int, version_number: int, user_id: int) -> bool:
+    """Restore a graph to a specific version (discards current unsaved changes)"""
+    conn = _conn()
+    cur = conn.cursor()
+    
+    # Verify ownership
+    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        conn.close()
+        return False
+    
+    # Get the version data
+    cur.execute(
+        "SELECT instruction, nodes_json, edges_json FROM graph_versions WHERE graph_id = ? AND version_number = ?",
+        (graph_id, version_number)
+    )
+    version_row = cur.fetchone()
+    if not version_row:
+        print(f"[restore_graph_version] Version {version_number} not found for graph {graph_id}")
+        conn.close()
+        return False
+    
+    print(f"[restore_graph_version] Restoring graph {graph_id} to version {version_number}")
+    print(f"[restore_graph_version] Nodes: {version_row[1][:100]}...")
+    
+    # Restore the complete version snapshot including instruction/description
+    # Each version has its own description that was captured when it was created
+    cur.execute(
+        "UPDATE graphs SET instruction = ?, nodes_json = ?, edges_json = ? WHERE id = ?",
+        (version_row[0], version_row[1], version_row[2], graph_id)
+    )
+    
+    affected_rows = cur.rowcount
+    print(f"[restore_graph_version] Updated {affected_rows} row(s)")
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def update_graph_description(graph_id: int, user_id: int, description: str) -> bool:
+    """Update only the description/instruction field of a graph"""
+    conn = _conn()
+    cur = conn.cursor()
+    
+    # Verify ownership
+    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        conn.close()
+        return False
+    
+    # Update description
+    cur.execute(
+        "UPDATE graphs SET instruction = ? WHERE id = ?",
+        (description, graph_id)
+    )
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
+def update_version_description(graph_id: int, version_number: int, user_id: int, description: str) -> bool:
+    """Update the description of a specific version snapshot"""
+    conn = _conn()
+    cur = conn.cursor()
+    
+    # Verify ownership via graphs table
+    cur.execute("SELECT user_id FROM graphs WHERE id = ?", (graph_id,))
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        conn.close()
+        return False
+    
+    # Update the version's description
+    cur.execute(
+        "UPDATE graph_versions SET instruction = ? WHERE graph_id = ? AND version_number = ?",
+        (description, graph_id, version_number)
+    )
+    
+    if cur.rowcount == 0:
+        conn.close()
+        return False
+    
+    conn.commit()
+    conn.close()
+    return True
 
 
 def delete_graph(graph_id: int):

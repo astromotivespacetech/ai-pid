@@ -167,6 +167,42 @@ async def homepage(request: Request):
     return templates.TemplateResponse("index.html", index_context(request, user=user))
 
 
+@app.get("/demo", response_class=HTMLResponse)
+async def demo(request: Request):
+    """
+    Load a demo P&ID diagram without requiring login.
+    """
+    # Sample cooling system diagram
+    sample_instruction = "Cooling water system: Centrifugal pump takes water from reservoir, feeds through pressure relief valve to shell-and-tube heat exchanger, then through check valve to storage tank with level indicator"
+    
+    sample_nodes = [
+        "Pump",
+        "Pressure Relief Valve",
+        "Heat Exchanger",
+        "Check Valve",
+        "Storage Tank",
+        "Level Indicator"
+    ]
+    
+    sample_edges = [
+        ["Pump", "Pressure Relief Valve"],
+        ["Pressure Relief Valve", "Heat Exchanger"],
+        ["Heat Exchanger", "Check Valve"],
+        ["Check Valve", "Storage Tank"],
+        ["Storage Tank", "Level Indicator"]
+    ]
+    
+    return templates.TemplateResponse("index.html", index_context(
+        request,
+        user=None,
+        is_demo=True,
+        instruction=sample_instruction,
+        nodes=sample_nodes,
+        edges=sample_edges,
+        filename_base="demo_pid"
+    ))
+
+
 @app.post("/generate-pid")
 async def generate_graph(request: Request, instruction: str = Form(...), existing_nodes: str = Form(None), existing_edges: str = Form(None)):
     """
@@ -308,7 +344,18 @@ async def auth_callback(request: Request, provider: str):
         request.session["user_id"] = uid
         print(f"[OAuth] Session after set: {dict(request.session)}")
 
-        return RedirectResponse(url="/", status_code=303)
+        # Check if user has any saved graphs
+        user_graphs = auth.get_graphs_for_user(uid)
+        
+        if user_graphs:
+            # Load the most recent graph (assumes graphs are ordered by created_at desc)
+            most_recent = user_graphs[0]
+            print(f"[OAuth] User has {len(user_graphs)} graph(s), loading most recent: {most_recent['id']}")
+            return RedirectResponse(url=f"/load-graph/{most_recent['id']}", status_code=303)
+        else:
+            # New user with no graphs - go to homepage with blank chat
+            print(f"[OAuth] User has no graphs, redirecting to homepage")
+            return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         print(f"[OAuth ERROR] {e}")
         import traceback
@@ -597,6 +644,71 @@ async def delete_graph(request: Request, graph_id: int):
     return RedirectResponse(url="/my-graphs", status_code=303)
 
 
+@app.post("/upload-graph")
+async def upload_graph(request: Request):
+    """Upload and validate a JSON graph file."""
+    from fastapi.responses import JSONResponse
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    
+    try:
+        body = await request.json()
+        
+        # Validate required fields
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "Invalid JSON structure"}, status_code=400)
+        
+        instruction = body.get("instruction", "")
+        nodes = body.get("nodes")
+        edges = body.get("edges")
+        
+        # Validate data types and structure
+        if not isinstance(instruction, str):
+            return JSONResponse({"error": "Invalid instruction field"}, status_code=400)
+        
+        if nodes is not None and not isinstance(nodes, list):
+            return JSONResponse({"error": "Invalid nodes field - must be array"}, status_code=400)
+        
+        if edges is not None and not isinstance(edges, list):
+            return JSONResponse({"error": "Invalid edges field - must be array"}, status_code=400)
+        
+        # Validate node structure
+        if nodes:
+            if len(nodes) > 200:
+                return JSONResponse({"error": "Too many nodes (max 200)"}, status_code=400)
+            
+            for node in nodes:
+                if not isinstance(node, (str, dict)):
+                    return JSONResponse({"error": "Invalid node format"}, status_code=400)
+                if isinstance(node, dict) and "id" not in node:
+                    return JSONResponse({"error": "Node missing id field"}, status_code=400)
+        
+        # Validate edge structure
+        if edges:
+            if len(edges) > 300:
+                return JSONResponse({"error": "Too many edges (max 300)"}, status_code=400)
+            
+            for edge in edges:
+                if not isinstance(edge, (list, dict)):
+                    return JSONResponse({"error": "Invalid edge format"}, status_code=400)
+        
+        # Save the uploaded graph
+        filename_base = f"pid_upload_{uuid.uuid4().hex}"
+        graph_id = auth.save_graph(uid, filename_base, instruction, nodes, edges)
+        
+        print(f"[Upload] Uploaded graph id={graph_id} for user={uid}")
+        return JSONResponse({"success": True, "graph_id": graph_id})
+        
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "Invalid JSON format"}, status_code=400)
+    except Exception as e:
+        print(f"[Upload] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/me")
 async def me(request: Request):
     """Return current session user details (debug aid)."""
@@ -607,28 +719,127 @@ async def me(request: Request):
     return {"logged_in": True, "user": user}
 
 
+@app.get("/api/graphs/{graph_id}/description")
+async def get_graph_description_api(graph_id: int, request: Request):
+    """Get the CURRENT description of a graph (not versioned)"""
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    
+    graphs = auth.get_graphs_for_user(uid)
+    graph = next((g for g in graphs if g["id"] == graph_id), None)
+    
+    if not graph:
+        return JSONResponse({"error": "Graph not found"}, status_code=404)
+    
+    return JSONResponse({
+        "success": True,
+        "description": graph["instruction"],
+        "graph_id": graph_id
+    })
+
+
+@app.get("/api/graphs/{graph_id}/versions")
+async def get_graph_versions_api(graph_id: int, request: Request):
+    """Get all versions for a specific graph"""
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    
+    versions = auth.get_graph_versions(graph_id, uid)
+    return JSONResponse({"success": True, "versions": versions})
+
+
+@app.post("/api/graphs/{graph_id}/versions/{version_number}/restore")
+async def restore_graph_version_api(graph_id: int, version_number: int, request: Request):
+    """Restore a graph to a specific version"""
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    
+    success = auth.restore_graph_version(graph_id, version_number, uid)
+    if success:
+        return JSONResponse({"success": True, "message": f"Restored to version {version_number}"})
+    else:
+        return JSONResponse({"error": "Failed to restore version"}, status_code=404)
+
+
+@app.patch("/api/graphs/{graph_id}/versions/{version_number}/description")
+async def update_version_description_api(graph_id: int, version_number: int, request: Request):
+    """Update the description of a specific version snapshot"""
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    
+    try:
+        body = await request.json()
+        description = body.get("description", "")
+        
+        success = auth.update_version_description(graph_id, version_number, uid, description)
+        if success:
+            return JSONResponse({"success": True})
+        else:
+            return JSONResponse({"error": "Version not found or access denied"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.patch("/api/graphs/{graph_id}/description")
+async def update_graph_description(graph_id: int, request: Request):
+    """Update the description/instruction of a graph"""
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    
+    try:
+        body = await request.json()
+        description = body.get("description", "")
+        
+        success = auth.update_graph_description(graph_id, uid, description)
+        if success:
+            return JSONResponse({"success": True})
+        else:
+            return JSONResponse({"error": "Graph not found or access denied"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/symbols")
-async def get_symbols():
-    """Return list of all available P&ID symbols (filenames)."""
+async def get_symbols(request: Request):
+    """Return list of all available P&ID symbols with metadata (user-specific custom symbols)."""
     symbols_dir = os.path.join(os.path.dirname(__file__), "..", "static", "symbols")
     custom_dir = os.path.join(symbols_dir, "custom")
     try:
+        symbols_list = []
+        
         # Get all PNG files in the main symbols directory
         symbol_files = sorted([f for f in os.listdir(symbols_dir) if f.endswith('.png')])
+        for f in symbol_files:
+            name = f.replace('.png', '').replace('_', ' ').title()
+            symbols_list.append({
+                "name": name,
+                "category": "Standard",
+                "path": f"/static/symbols/{f}"
+            })
         
-        # Get custom symbols if directory exists
-        custom_files = []
-        if os.path.exists(custom_dir):
-            custom_files = sorted([f"custom/{f}" for f in os.listdir(custom_dir) if f.endswith('.png')])
-        
-        # Combine and convert filenames to symbol names (remove .png extension)
-        all_files = symbol_files + custom_files
-        symbols = [f.replace('.png', '') for f in all_files]
+        # Get user-specific custom symbols if logged in
+        user_id = request.session.get("user_id")
+        if user_id and os.path.exists(custom_dir):
+            user_custom_dir = os.path.join(custom_dir, str(user_id))
+            if os.path.exists(user_custom_dir):
+                custom_files = sorted([f for f in os.listdir(user_custom_dir) if f.endswith(('.png', '.jpg', '.jpeg', '.svg'))])
+                for f in custom_files:
+                    name = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').replace('.svg', '').replace('_', ' ').title()
+                    symbols_list.append({
+                        "name": name,
+                        "category": "Custom",
+                        "path": f"/static/symbols/custom/{user_id}/{f}"
+                    })
         
         return {
             "success": True,
-            "count": len(symbols),
-            "symbols": symbols
+            "count": len(symbols_list),
+            "symbols": symbols_list
         }
     except Exception as e:
         print(f"[API] Error listing symbols: {e}")
@@ -640,9 +851,17 @@ async def get_symbols():
 
 
 @app.post("/api/symbols/upload")
-async def upload_custom_symbol(file: UploadFile = File(...)):
-    """Upload a custom symbol image."""
+async def upload_custom_symbol(request: Request, file: UploadFile = File(...)):
+    """Upload a custom symbol image (user-specific)."""
     try:
+        # Check if user is logged in
+        user_id = request.session.get("user_id")
+        if not user_id:
+            return JSONResponse(
+                {"success": False, "error": "Must be logged in to upload custom symbols"},
+                status_code=401
+            )
+        
         # Validate file type
         if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.svg')):
             return JSONResponse(
@@ -650,17 +869,21 @@ async def upload_custom_symbol(file: UploadFile = File(...)):
                 status_code=400
             )
         
+        # Create user-specific directory
+        user_custom_dir = CUSTOM_SYMBOLS_DIR / str(user_id)
+        user_custom_dir.mkdir(parents=True, exist_ok=True)
+        
         # Generate safe filename (preserve extension)
         file_ext = os.path.splitext(file.filename)[1]
         safe_name = f"{uuid.uuid4().hex}{file_ext}"
-        file_path = CUSTOM_SYMBOLS_DIR / safe_name
+        file_path = user_custom_dir / safe_name
         
         # Save file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
         # Return the relative path that can be used in imageUrl
-        relative_path = f"/static/symbols/custom/{safe_name}"
+        relative_path = f"/static/symbols/custom/{user_id}/{safe_name}"
         
         return {
             "success": True,

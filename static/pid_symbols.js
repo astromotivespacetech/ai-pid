@@ -58,6 +58,16 @@ function tokenize(sym) {
 
 // Levenshtein distance - measure of string similarity
 function levenshteinDistance(str1, str2) {
+    // Convert to strings if needed
+    if (typeof str1 !== 'string') str1 = String(str1);
+    if (typeof str2 !== 'string') str2 = String(str2);
+    
+    // Safeguard against extremely long strings that could allocate huge arrays
+    const MAX_LEN = 1000;
+    if (str1.length > MAX_LEN || str2.length > MAX_LEN) {
+        return Math.max(str1.length, str2.length);
+    }
+    
     const len1 = str1.length;
     const len2 = str2.length;
     const matrix = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(0));
@@ -80,6 +90,10 @@ function levenshteinDistance(str1, str2) {
 
 // Calculate similarity score (token + edit blended)
 function calculateSimilarity(str1, str2) {
+    // Convert to strings if needed
+    if (typeof str1 !== 'string') str1 = String(str1);
+    if (typeof str2 !== 'string') str2 = String(str2);
+    
     const maxLen = Math.max(str1.length, str2.length);
     const editScore = maxLen === 0 ? 1 : 1 - (levenshteinDistance(str1, str2) / maxLen);
     const t1 = tokenize(str1);
@@ -99,7 +113,16 @@ function findBestSymbol(nodeName) {
     }
 
     const normalized = normalizeName(nodeName);
-    if (!normalized) return null;
+    if (!normalized) {
+        console.warn('Could not normalize node name:', nodeName);
+        return null;
+    }
+    
+    // Safeguard: if normalized name is too long, just return null
+    if (normalized.length > 500) {
+        console.warn('Node name too long after normalization:', normalized.length);
+        return null;
+    }
 
     // Exact match wins immediately
     if (ALL_SYMBOLS.includes(normalized)) {
@@ -113,10 +136,21 @@ function findBestSymbol(nodeName) {
     }
 
     // Score all symbols
-    const scores = ALL_SYMBOLS.map(symbol => ({
-        symbol,
-        score: calculateSimilarity(normalized, symbol)
-    }));
+    const scores = ALL_SYMBOLS.map(symbol => {
+        try {
+            const score = calculateSimilarity(normalized, symbol);
+            return {
+                symbol: String(symbol),  // Ensure symbol is a string
+                score: isNaN(score) ? 0 : score
+            };
+        } catch (e) {
+            console.error('Error scoring symbol:', symbol, e);
+            return {
+                symbol: String(symbol),
+                score: 0
+            };
+        }
+    });
 
     scores.sort((a, b) => b.score - a.score);
 
@@ -126,7 +160,7 @@ function findBestSymbol(nodeName) {
 
     // Require stronger match to avoid bad picks
     if (best && best.score >= 0.4) {
-        return best.symbol;
+        return String(best.symbol);  // Ensure we return a string
     }
     return null;
 }
@@ -147,7 +181,18 @@ async function loadSymbols() {
         
         const data = await response.json();
         if (data.success && data.symbols) {
-            ALL_SYMBOLS = data.symbols;
+            // Extract just the symbol names from the API response
+            // API returns objects with {name, category, path}, but we need just the names
+            ALL_SYMBOLS = data.symbols.map(sym => {
+                if (typeof sym === 'string') {
+                    return sym;
+                } else if (sym.name) {
+                    // Convert title case back to snake_case for matching
+                    return sym.name.toLowerCase().replace(/\s+/g, '_');
+                }
+                return null;
+            }).filter(Boolean);
+            
             SYMBOLS_LOADED = true;
             console.log(`Loaded ${ALL_SYMBOLS.length} symbols`);
         } else {

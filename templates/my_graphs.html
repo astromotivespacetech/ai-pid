@@ -231,8 +231,7 @@
                     <tr>
                         <th>Created</th>
                         <th>Description</th>
-                        <th>Nodes</th>
-                        <th>Edges</th>
+                        <th>Versions</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -241,19 +240,38 @@
                     <tr>
                         <td>{{ graph.created_at[:10] }}</td>
                         <td>
-                            <div class="graph-description">
-                                {{ graph.instruction[:80] }}{% if graph.instruction|length > 80 %}...{% endif %}
+                            <div class="graph-description" style="position: relative;">
+                                <span 
+                                    class="description-text" 
+                                    data-graph-id="{{ graph.id }}"
+                                    onclick="toggleDescriptionEdit({{ graph.id }})"
+                                    style="cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 4px; display: inline-flex; align-items: center; gap: 0.75rem; font-size: 0.875rem;"
+                                    onmouseover="this.style.backgroundColor='rgba(59, 130, 246, 0.1)'"
+                                    onmouseout="this.style.backgroundColor='transparent'"
+                                >
+                                    <span style="flex: 1;">{{ graph.instruction or '(no description)' }}</span>
+                                    <svg style="width: 0.75rem; height: 0.75rem; opacity: 0.6; flex-shrink: 0;" data-lucide="edit-2" stroke-width="2"></svg>
+                                </span>
+                                <input 
+                                    type="text" 
+                                    class="description-input" 
+                                    data-graph-id="{{ graph.id }}" 
+                                    value="{{ graph.instruction or '' }}" 
+                                    placeholder="Enter description..."
+                                    style="display: none; width: 100%; border: 2px solid var(--primary-blue); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; background: white;"
+                                    onblur="updateDescription({{ graph.id }}, this.value)"
+                                    onkeypress="if(event.key==='Enter') this.blur()"
+                                />
                             </div>
                         </td>
                         <td>
-                            <span class="graph-meta">{{ graph.nodes|length if graph.nodes else 0 }}</span>
-                        </td>
-                        <td>
-                            <span class="graph-meta">{{ graph.edges|length if graph.edges else 0 }}</span>
+                            <select class="version-selector" data-graph-id="{{ graph.id }}" onchange="handleVersionChange({{ graph.id }}, this.value)" style="padding: 0.25rem 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem; cursor: pointer;">
+                                <option value="">Loading versions...</option>
+                            </select>
                         </td>
                         <td>
                             <div class="graph-actions">
-                                <a href="/load-graph/{{ graph.id }}" class="action-link" title="Load Graph"><i data-lucide="folder-open" style="width: 18px; height: 18px;"></i></a>
+                                <a href="javascript:void(0)" onclick="loadVersionFromSelector({{ graph.id }})" class="action-link" title="Load Selected Version"><i data-lucide="folder-open" style="width: 18px; height: 18px;"></i></a>
                                 <a href="/download-graph/{{ graph.id }}" class="action-link" title="Download Graph"><i data-lucide="download" style="width: 18px; height: 18px;"></i></a>
                                 <form action="/delete-graph/{{ graph.id }}" method="post" class="delete-form" onsubmit="return confirm('Are you sure you want to delete this graph?')">
                                     <button type="submit" class="delete-btn" title="Delete Graph"><i data-lucide="trash-2" style="width: 18px; height: 18px;"></i></button>
@@ -264,6 +282,15 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+
+        <div style="margin-top: 2rem; padding: 1.5rem; background: var(--neutral-50); border-radius: var(--radius-lg); text-align: center;">
+            <p style="color: var(--neutral-600); margin-bottom: 1rem;">Want to import a previously downloaded graph?</p>
+            <label for="upload-json-file" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--primary-blue); color: white; border-radius: var(--radius-md); font-weight: 600;">
+                <i data-lucide="upload" style="width: 16px; height: 16px;"></i>
+                Upload JSON
+                <input id="upload-json-file" type="file" accept="application/json,.json" style="display: none;">
+            </label>
         </div>
         {% else %}
         <div class="empty-state">
@@ -281,6 +308,264 @@
         if (typeof lucide !== 'undefined') {
             lucide.createIcons();
         }
+
+        // Populate version dropdowns and refresh descriptions on page load
+        async function populateVersionSelectors() {
+            const selectors = document.querySelectorAll('.version-selector');
+            for (const selector of selectors) {
+                const graphId = selector.dataset.graphId;
+                try {
+                    // Fetch versions
+                    const response = await fetch(`/api/graphs/${graphId}/versions`);
+                    const data = await response.json();
+                    if (data.versions && data.versions.length > 0) {
+                        // Clear the loading option
+                        selector.innerHTML = '';
+                        
+                        // API returns versions in newest-first order, add them as-is
+                        data.versions.forEach((version, index) => {
+                            const option = document.createElement('option');
+                            option.value = version.version_number;
+                            const date = new Date(version.created_at);
+                            option.textContent = `v${version.version_number} - ${date.toLocaleString()}`;
+                            selector.appendChild(option);
+                            
+                            // Set first (newest) version as selected
+                            if (index === 0) {
+                                option.selected = true;
+                                // Display the description from the latest version
+                                handleVersionChange(graphId, version.version_number);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error fetching versions:', error);
+                }
+            }
+        }
+
+        // Load graph with selected version
+        function loadGraphWithVersion(graphId) {
+            const selector = document.querySelector(`[data-graph-id="${graphId}"]`);
+            const selectedVersion = selector.value;
+            
+            if (!selectedVersion) {
+                // No version selected, load current state
+                window.location.href = `/load-graph/${graphId}`;
+            } else {
+                // Version selected, restore it then load
+                loadVersionFromSelector(graphId);
+            }
+        }
+
+        // Load the version selected in the dropdown
+        async function loadVersionFromSelector(graphId) {
+            const selector = document.querySelector(`select[data-graph-id="${graphId}"]`);
+            const selectedVersion = selector.value;
+            
+            console.log('Loading version:', selectedVersion, 'for graph:', graphId);
+            
+            if (!selectedVersion) {
+                window.location.href = `/load-graph/${graphId}`;
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/graphs/${graphId}/versions/${selectedVersion}/restore`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    console.log('Storing version number:', selectedVersion);
+                    sessionStorage.setItem('loadedVersionNumber', selectedVersion);
+                    window.location.href = `/load-graph/${graphId}`;
+                }
+            } catch (error) {
+                console.error('Error loading version:', error);
+            }
+        }
+
+        // Handle version selection - show description from that version
+        async function handleVersionChange(graphId, versionNumber) {
+            if (!versionNumber) return;
+            
+            try {
+                const response = await fetch(`/api/graphs/${graphId}/versions`);
+                const data = await response.json();
+                if (data.versions) {
+                    const selectedVersion = data.versions.find(v => v.version_number === parseInt(versionNumber));
+                    if (selectedVersion) {
+                        // Update the description field to show this version's description
+                        const descriptionText = document.querySelector(`.description-text[data-graph-id="${graphId}"]`);
+                        const descriptionInput = document.querySelector(`.description-input[data-graph-id="${graphId}"]`);
+                        if (descriptionText && descriptionInput) {
+                            const displayText = selectedVersion.instruction || '(no description)';
+                            descriptionText.textContent = displayText;
+                            descriptionInput.value = selectedVersion.instruction || '';
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading version description:', error);
+            }
+        }
+
+        // Helper function to format time ago
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+            
+            if (diffMins < 1) return 'just now';
+            if (diffMins < 60) return diffMins === 1 ? '1 minute ago' : `${diffMins} minutes ago`;
+            if (diffHours < 24) return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+            if (diffDays < 30) return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+            return date.toLocaleDateString();
+        }
+
+        // Populate version selectors when page loads
+        window.addEventListener('DOMContentLoaded', populateVersionSelectors);
+
+        // Toggle between static text and editable input
+        function toggleDescriptionEdit(graphId) {
+            const container = document.querySelector(`[data-graph-id="${graphId}"]`).closest('.graph-description');
+            const textSpan = container.querySelector('.description-text');
+            const input = container.querySelector('.description-input');
+            
+            textSpan.style.display = 'none';
+            input.style.display = 'block';
+            input.focus();
+            input.select();
+        }
+
+        // Update description function
+        async function updateDescription(graphId, description) {
+            const container = document.querySelector(`[data-graph-id="${graphId}"]`).closest('.graph-description');
+            const textSpan = container.querySelector('.description-text');
+            const input = container.querySelector('.description-input');
+            
+            // Get the selected version from the dropdown
+            const versionSelector = document.querySelector(`select[data-graph-id="${graphId}"]`);
+            const selectedVersion = versionSelector ? versionSelector.value : null;
+            
+            if (!selectedVersion) {
+                alert('No version selected');
+                return;
+            }
+            
+            try {
+                // Update the specific version's description
+                const response = await fetch(`/api/graphs/${graphId}/versions/${selectedVersion}/description`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ description: description })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    // Update the text and return to static display
+                    const displayText = description.trim() || '(no description)';
+                    textSpan.textContent = displayText;
+                    textSpan.style.display = 'inline-block';
+                    input.style.display = 'none';
+                } else {
+                    alert('Failed to update description: ' + (data.error || 'Unknown error'));
+                    input.style.display = 'none';
+                    textSpan.style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.error('Error updating description:', error);
+                alert('Error updating description');
+                input.style.display = 'none';
+                textSpan.style.display = 'inline-block';
+            }
+        }
+
+        // JSON upload handler
+        const uploadInput = document.getElementById('upload-json-file');
+        if (uploadInput) {
+            uploadInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                try {
+                    const text = await file.text();
+                    const json = JSON.parse(text);
+                    
+                    // Send to server for validation and loading
+                    const response = await fetch('/upload-graph', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: text
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || 'Upload failed');
+                    }
+                    
+                    const result = await response.json();
+                    
+                    // Redirect to view the uploaded graph
+                    if (result.graph_id) {
+                        window.location.href = '/load-graph/' + result.graph_id;
+                    } else {
+                        window.location.reload();
+                    }
+                } catch (err) {
+                    alert('Failed to upload graph: ' + err.message);
+                    console.error('Upload error:', err);
+                }
+                
+                // Reset input
+                e.target.value = '';
+            });
+        }
+
+        // JSON upload handler for each row (if re-adding)
+        const uploadInputs = document.querySelectorAll('.upload-json-input');
+        uploadInputs.forEach(input => {
+            input.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                try {
+                    const text = await file.text();
+                    const json = JSON.parse(text);
+                    
+                    // Send to server for validation and loading
+                    const response = await fetch('/upload-graph', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: text
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || 'Upload failed');
+                    }
+                    
+                    const result = await response.json();
+                    
+                    // Redirect to view the uploaded graph
+                    if (result.graph_id) {
+                        window.location.href = '/load-graph/' + result.graph_id;
+                    } else {
+                        window.location.reload();
+                    }
+                } catch (err) {
+                    alert('Failed to upload graph: ' + err.message);
+                    console.error('Upload error:', err);
+                }
+                
+                // Reset input
+                e.target.value = '';
+            });
+        });
     </script>
 </body>
 </html>

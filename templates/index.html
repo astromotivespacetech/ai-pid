@@ -87,6 +87,26 @@
             background: var(--neutral-100);
         }
 
+        .header-text-btn {
+            border: 1px solid var(--neutral-300);
+            background: white;
+            color: var(--neutral-900);
+            border-radius: var(--radius-md);
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all var(--transition-fast);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            white-space: nowrap;
+        }
+
+        .header-text-btn:hover {
+            background: var(--neutral-100);
+        }
+
         #main-container {
             display: flex;
             flex: 1;
@@ -497,7 +517,9 @@
     <div id="header">
         <div class="header-content">
             <div style="display: flex; align-items: center; gap: 2rem; flex: 1;">
-                <h1 style="margin: 0; white-space: nowrap;">AI-Powered Text-to-PI&D Tool</h1>
+                <a href="/" style="text-decoration: none; color: inherit;">
+                    <h1 style="margin: 0; white-space: nowrap; cursor: pointer;">AI-Powered Text-to-PI&D Tool</h1>
+                </a>
                 {% if user %}
                 <div class="user-info">
                     <span>Signed in as <strong>{{ user.display_name or user.email or user.username }}</strong></span>
@@ -510,6 +532,13 @@
                 {% endif %}
             </div>
             <div class="header-actions">
+                {% if not user %}
+                <a href="/" class="btn" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none; white-space: nowrap;">Sign In</a>
+                {% endif %}
+                <button id="symbol-browser-btn" class="header-text-btn" title="Browse Symbols">
+                    <span style="font-size: 1rem;">◆</span>
+                    <span>Symbol Library</span>
+                </button>
                 <button id="help-btn" title="Help">?</button>
             </div>
         </div>
@@ -517,7 +546,7 @@
 
     <div id="main-container">
         <div id="content-area">
-            {% if not user %}
+            {% if not user and not is_demo %}
             {% set google_enabled = providers.get('google') if providers else False %}
             {% set github_enabled = providers.get('github') if providers else False %}
             <div class="login-landing">
@@ -547,6 +576,9 @@
                             </a>
                             {% endif %}
                         </div>
+                        <p style="font-size: 0.85rem; color: var(--neutral-600); margin-top: 0.75rem; text-align: center;">
+                            or <a href="/demo" style="color: var(--primary-blue); font-weight: 600; text-decoration: none;">Try Demo →</a>
+                        </p>
                     </div>
 
                     <div class="feature-section">
@@ -574,7 +606,7 @@
                     <div class="feature-section">
                         <h3>✨ Features</h3>
                         <ul class="feature-list">
-                            <li><strong>250+ Engineering Symbols</strong> - Pumps, valves, heat exchangers, tanks</li>
+                            <li><strong>250+ Engineering Symbols</strong> - <a href="javascript:openSymbolBrowser()" style="color: var(--primary-blue); text-decoration: underline; cursor: pointer;">Browse →</a> Pumps, valves, heat exchangers, tanks</li>
                             <li><strong>Smart Auto-Matching</strong> - AI selects the right symbols</li>
                             <li><strong>Custom Icons</strong> - Upload your own specialized symbols</li>
                             <li><strong>Interactive Editing</strong> - Drag nodes and customize layouts</li>
@@ -590,17 +622,28 @@
                 </div>
                 {% endif %}
 
+                {% if is_demo %}
+                <div style="padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); border-bottom: 1px solid #d97706; text-align: center; color: white; font-weight: 600; font-size: 0.95rem;">
+                    🎯 Demo Mode • Changes won't be saved • <a href="/" style="color: white; text-decoration: underline; font-weight: 700;">Sign in</a> to save your diagrams
+                </div>
+                {% endif %}
+
                 <!-- Hidden form inputs for saving -->
                 <input type="hidden" id="graph-id-input" value="{{ graph_id or '' }}">
                 <input type="hidden" id="filename-base-input" value="{{ filename_base or '' }}">
                 <input type="hidden" id="instruction-input" value="{{ instruction or '' }}">
+                <input type="hidden" id="is-demo" value="{{ 'true' if is_demo else 'false' }}">
                 <input type="hidden" id="nodes-input" value="">
                 <input type="hidden" id="edges-input" value="">
 
                 <script id="node-data-json" type="application/json">{{ (nodes or []) | tojson }}</script>
                 <script id="edge-data-json" type="application/json">{{ (edges or []) | tojson }}</script>
 
-                <div id="graph-container" style="display: {% if nodes or edges %}block{% else %}none{% endif %}; flex: 1; width: 100%;"></div>
+                <div id="graph-container" style="display: {% if nodes or edges %}block{% else %}none{% endif %}; flex: 1; width: 100%; position: relative;">
+                    <div id="version-indicator" onclick="openVersionHistory()" style="position: absolute; top: 1rem; left: 1rem; padding: 0.375rem 0.75rem; background: rgba(59, 130, 246, 0.15); border-radius: var(--radius-md); font-size: 0.75rem; color: var(--primary-blue); font-weight: 500; display: none; z-index: 10; cursor: pointer; transition: background 0.2s; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis;">
+                        <span id="version-number">v1</span><span id="version-date" style="opacity: 0.8; margin: 0 0.25rem;"></span><span id="version-description" style="opacity: 0.7;"></span>
+                    </div>
+                </div>
                 
                 <!-- Controls and Inspector Row -->
                 <div id="controls-inspector-row" style="display: {% if nodes or edges %}flex{% else %}none{% endif %}; gap: 1rem; margin-top: 1rem; align-items: flex-start;">
@@ -618,37 +661,40 @@
                         <button id="zoom-out-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
                             <i data-lucide="zoom-out" style="width: 16px; height: 16px;"></i>
                         </button>
-                        <button id="save-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;" onclick="saveGraphAjax()">
+                        <button id="save-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;" onclick="saveGraphAjax()" {% if is_demo %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %} title="{% if is_demo %}Sign in to save diagrams{% else %}Save diagram{% endif %}">
                             <i data-lucide="save" style="width: 16px; height: 16px;"></i>
                         </button>
+                        <div style="position: relative;">
+                            <button id="export-btn" class="secondary" style="padding: 0.375rem 0.5rem; display: flex; align-items: center; gap: 0.5rem;" title="Export">
+                                <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+                            </button>
+                            <div id="export-menu" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 0.25rem; background: white; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 140px; z-index: 1000;">
+                                <button id="export-png-option" style="width: 100%; padding: 0.5rem 0.75rem; text-align: left; border: none; background: none; cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; color: var(--neutral-900);">
+                                    <i data-lucide="image" style="width: 14px; height: 14px;"></i>
+                                    Export PNG
+                                </button>
+                                <button id="export-svg-option" style="width: 100%; padding: 0.5rem 0.75rem; text-align: left; border: none; background: none; cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; color: var(--neutral-900);">
+                                    <i data-lucide="file-image" style="width: 14px; height: 14px;"></i>
+                                    Export SVG
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Node Inspector -->
                     <div id="node-inspector" style="flex: 1; background: white; border: 1px solid var(--neutral-200); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: 0.625rem;">
-                        <h4 style="margin:0 0 0.5rem 0; font-size: 0.875rem; font-weight: 600;">Node Inspector</h4>
-                        <div style="display:grid; grid-template-columns: 0.8fr 1.2fr 1fr; gap: 0.5rem; align-items: end; font-size: 0.8125rem;">
-                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                                <label for="inspector-node-id" style="margin: 0; font-weight: 500; font-size: 0.75rem;">ID</label>
-                                <input id="inspector-node-id" type="text" disabled style="padding: 0.375rem 0.5rem; font-size: 0.8125rem;">
-                            </div>
-                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                                <label for="inspector-node-label" style="margin: 0; font-weight: 500; font-size: 0.75rem;">Label</label>
-                                <input id="inspector-node-label" type="text" placeholder="Node label" style="padding: 0.375rem 0.5rem; font-size: 0.8125rem;">
-                            </div>
-                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                                <label for="inspector-symbol-select" style="margin: 0; font-weight: 500; font-size: 0.75rem;">Symbol</label>
-                                <div style="position: relative;">
-                                    <div id="inspector-symbol-select" style="padding: 0.375rem 0.5rem; font-size: 0.8125rem; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); background: white; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; min-height: 32px;">
-                                        <span id="symbol-select-text">-- Auto --</span>
-                                    </div>
-                                    <div id="symbol-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px; background: white; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); max-height: 300px; overflow-y: auto; z-index: 1000;">
-                                    </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.8125rem;">
+                            <span style="white-space: nowrap; font-weight: 600; font-size: 0.875rem;">Selected Node</span>
+                            <input id="inspector-node-label" type="text" placeholder="Label" style="flex: 0.8; padding: 0.375rem 0.5rem; font-size: 0.8125rem; border: 1px solid var(--neutral-300); border-radius: var(--radius-md);">
+                            <div style="position: relative; flex: 1; z-index: 100;">
+                                <div id="inspector-symbol-select" style="padding: 0.375rem 0.5rem; font-size: 0.8125rem; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); background: white; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; white-space: nowrap;">
+                                    <span id="symbol-select-text">Symbol</span>
+                                </div>
+                                <div id="symbol-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px; background: white; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); max-height: 300px; overflow-y: auto; z-index: 1000;">
                                 </div>
                             </div>
-                            <div style="grid-column: 1 / -1; display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
-                                <label for="inspector-upload" style="margin: 0; font-weight: 500; white-space: nowrap; font-size: 0.75rem;">Upload:</label>
-                                <input id="inspector-upload" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" style="flex: 1; padding: 0.375rem 0.5rem; font-size: 0.8125rem;">
-                            </div>
+                            <label for="inspector-upload" style="margin: 0; white-space: nowrap; cursor: pointer; padding: 0.375rem 0.5rem; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); background: var(--neutral-50); font-size: 0.75rem; font-weight: 500; flex: 0.9;">Customize</label>
+                            <input id="inspector-upload" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" style="display: none;">
                         </div>
                     </div>
                 </div>
@@ -669,16 +715,216 @@
                 <textarea id="chat-input" placeholder="Describe your system... (Press Enter to send)"></textarea>
             </div>
         </div>
+        {% elif is_demo %}
+        <div id="chat-sidebar">
+            <div class="chat-header">
+                <strong>Chat</strong>
+                <button id="clear-chat-btn" class="danger small" onclick="clearChat()" disabled style="opacity: 0.5; cursor: not-allowed;">Clear</button>
+            </div>
+            <div id="chat-history">
+                <div class="chat-message message-assistant">
+                    <div class="message-bubble">Welcome to the demo! This cooling water system includes a centrifugal pump, pressure relief valve, heat exchanger, check valve, storage tank, and level indicator. Sign in to edit and refine this diagram using chat.</div>
+                </div>
+            </div>
+            <div id="chat-input-area" style="opacity: 0.6; pointer-events: none;">
+                <textarea id="chat-input" placeholder="Sign in to refine your diagram..." disabled></textarea>
+            </div>
+        </div>
         {% endif %}
     </div>
+
+    <!-- Version History Modal -->
+    <div id="version-history-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-xl); width: 90%; max-width: 700px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid var(--neutral-200); display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h2 style="margin: 0; font-size: 1.3rem; font-weight: 600;">Version History</h2>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--neutral-500);">Restore to a previous version</p>
+                </div>
+                <button id="close-history-btn" style="border: none; background: none; cursor: pointer; font-size: 1.5rem; color: var(--neutral-600);" title="Close">✕</button>
+            </div>
+            <div style="flex: 1; overflow-y: auto; padding: 1.5rem;">
+                <div id="version-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- Versions will be populated here -->
+                </div>
+                <div id="version-loading" style="display: none; text-align: center; padding: 2rem; color: var(--neutral-500);">
+                    <p>Loading versions...</p>
+                </div>
+                <div id="version-empty" style="display: none; text-align: center; padding: 2rem; color: var(--neutral-500);">
+                    <p>No saved versions yet. Versions are created each time you save.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Symbol Browser Modal -->
+    <div id="symbol-browser-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-xl); width: 90%; max-width: 900px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+            <!-- Header -->
+            <div style="padding: 1.5rem; border-bottom: 1px solid var(--neutral-200); display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+                    <h2 style="margin: 0; font-size: 1.3rem; font-weight: 600;">Symbol Library</h2>
+                    <span style="font-size: 0.85rem; color: var(--neutral-500);">250+ engineering symbols</span>
+                </div>
+                <button id="close-browser-btn" style="border: none; background: none; cursor: pointer; font-size: 1.5rem; color: var(--neutral-600);" title="Close">✕</button>
+            </div>
+
+            <!-- Search Bar -->
+            <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--neutral-200); background: var(--neutral-50);">
+                <input id="symbol-search" type="text" placeholder="Search symbols (e.g., pump, valve, heat exchanger)..." style="width: 100%; padding: 0.75rem 1rem; font-size: 0.95rem; border: 1px solid var(--neutral-300); border-radius: var(--radius-md); font-family: inherit;">
+            </div>
+
+            <!-- Symbols Grid -->
+            <div style="flex: 1; overflow-y: auto; padding: 1.5rem;">
+                <div id="symbol-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 1rem;">
+                    <!-- Symbols will be populated here -->
+                </div>
+                <div id="symbol-no-results" style="display: none; text-align: center; padding: 2rem; color: var(--neutral-500);">
+                    <p style="font-size: 1rem; margin: 0;">No symbols found</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .symbol-browser-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            border: 1px solid var(--neutral-200);
+            border-radius: var(--radius-md);
+            background: white;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            text-align: center;
+        }
+
+        .symbol-browser-item:hover {
+            border-color: var(--primary-blue);
+            background: var(--primary-blue);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .symbol-image {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--neutral-50);
+            border-radius: var(--radius-md);
+            padding: 0.5rem;
+        }
+
+        .symbol-browser-item:hover .symbol-image {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .symbol-image img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .symbol-name {
+            font-size: 0.75rem;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        .symbol-category {
+            font-size: 0.65rem;
+            opacity: 0.7;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        .version-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.625rem 0.75rem;
+            border: 1px solid var(--neutral-200);
+            border-radius: var(--radius-md);
+            background: white;
+            transition: all var(--transition-fast);
+        }
+
+        .version-item:hover {
+            border-color: var(--neutral-300);
+            background: var(--neutral-50);
+        }
+
+        .version-item.current {
+            border-color: var(--primary-blue);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .version-info {
+            flex: 1;
+        }
+
+        .version-number {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--neutral-900);
+        }
+
+        .version-time {
+            font-size: 0.75rem;
+            color: var(--neutral-600);
+            margin-top: 0.125rem;
+        }
+
+        .version-instruction {
+            font-size: 0.7rem;
+            color: var(--neutral-500);
+            margin-top: 0.125rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
 
     <script>
         let cy;
         let nodeData = JSON.parse(document.getElementById('node-data-json')?.textContent || '[]');
         let edgeData = JSON.parse(document.getElementById('edge-data-json')?.textContent || '[]');
         let conversationHistory = [];
+        let currentVersionNumber = null;  // Track which version is currently loaded
         
         console.log('Page load - nodeData:', nodeData, 'edgeData:', edgeData);
+
+        // If we're on a fresh page with no graph data, clear the conversation
+        if (nodeData.length === 0 && edgeData.length === 0) {
+            localStorage.removeItem('pidConversationHistory');
+            console.log('Cleared conversation history for fresh start');
+        } else {
+            // A graph is loaded - show version indicator if it's a saved graph (has graph_id)
+            const graphIdInput = document.getElementById('graph-id-input');
+            if (graphIdInput && graphIdInput.value) {
+                // Check if a specific version was loaded
+                const loadedVersion = sessionStorage.getItem('loadedVersionNumber');
+                console.log('Loaded version from sessionStorage:', loadedVersion);
+                if (loadedVersion) {
+                    console.log('Setting version indicator to:', loadedVersion);
+                    setVersionIndicator(parseInt(loadedVersion));
+                    sessionStorage.removeItem('loadedVersionNumber');  // Clear so it doesn't stick
+                } else {
+                    // Default to latest version (v1) when loading normally
+                    setVersionIndicator(1);
+                }
+            }
+        }
 
         // Load conversation history from localStorage
         function loadConversationHistory() {
@@ -810,6 +1056,9 @@
 
         // Update the graph with new data
         function updateGraph(nodes, edges, filename_base = null, instruction = null) {
+            // Clear version indicator for new graphs from chat
+            clearVersionIndicator();
+            
             // Make sure graph container and controls are visible
             const graphContainer = document.getElementById('graph-container');
             const controlsInspectorRow = document.getElementById('controls-inspector-row');
@@ -881,14 +1130,18 @@
                 // Update existing graph
                 cy.elements().remove();
 
-                // Normalize nodes to {id,label,imageUrl}
+                // Normalize nodes to {id,label,imageUrl,position}
                 const normalizedNodes = (nodes || [])
-                    .map(n => typeof n === 'string' ? { id: n, label: n, imageUrl: null } : { id: n?.id, label: n?.label || n?.id, imageUrl: n?.imageUrl || null })
+                    .map(n => typeof n === 'string' ? { id: n, label: n, imageUrl: null, position: null } : { id: n?.id, label: n?.label || n?.id, imageUrl: n?.imageUrl || null, position: n?.position })
                     .filter(n => n.id);
 
                 // Add new nodes
                 normalizedNodes.forEach(n => {
-                    cy.add({ data: { id: n.id, label: n.label, imageUrl: n.imageUrl || null } });
+                    const nodeData = { data: { id: n.id, label: n.label, imageUrl: n.imageUrl || null } };
+                    if (n.position) {
+                        nodeData.position = n.position;
+                    }
+                    cy.add(nodeData);
                 });
 
                 // Convert edges to proper format and add them
@@ -1057,31 +1310,28 @@
         let currentSymbolValue = '';
         
         async function renderInspector() {
-            const idInput = document.getElementById('inspector-node-id');
             const labelInput = document.getElementById('inspector-node-label');
             const selectEl = document.getElementById('inspector-symbol-select');
             const selectText = document.getElementById('symbol-select-text');
             const dropdownMenu = document.getElementById('symbol-dropdown-menu');
             const uploadEl = document.getElementById('inspector-upload');
-            if (!idInput || !labelInput || !selectEl || !uploadEl) return;
+            if (!labelInput || !selectEl || !uploadEl) return;
 
             // No selection: blank and disabled
             if (!selectedNodeId) {
-                idInput.value = '';
                 labelInput.value = '';
                 labelInput.disabled = true;
                 uploadEl.disabled = true;
                 selectEl.style.opacity = '0.5';
                 selectEl.style.pointerEvents = 'none';
-                selectText.innerHTML = '-- Auto --';
+                selectText.innerHTML = 'Symbol';
                 currentSymbolValue = '';
                 return;
             }
 
             // Selected: populate and enable
             const node = cy?.getElementById(selectedNodeId);
-            const label = (node && node.length > 0) ? (node.data('label') || selectedNodeId) : selectedNodeId;
-            idInput.value = selectedNodeId;
+            const label = (node && !node.empty()) ? (node.data('label') || selectedNodeId) : selectedNodeId;
             labelInput.value = label;
             labelInput.disabled = false;
             uploadEl.disabled = false;
@@ -1090,12 +1340,19 @@
 
             try {
                 const symbols = await getAvailableSymbols();
-                const bestSymbol = findBestSymbol(label);
+                let bestSymbol = null;
+                try {
+                    bestSymbol = findBestSymbol(label);
+                } catch (symbolErr) {
+                    console.error('Error finding best symbol:', symbolErr);
+                    bestSymbol = null;
+                }
                 currentSymbolValue = bestSymbol || '';
+                console.log('[Inspector] Selected node:', selectedNodeId, 'Label:', label, 'Best symbol:', bestSymbol);
                 
                 // Update selected display
                 if (bestSymbol) {
-                    selectText.innerHTML = `<img src="/static/symbols/${bestSymbol}.png" style="width: 28px; height: 28px; object-fit: cover; vertical-align: middle; border-radius: 3px;"> ${bestSymbol}`;
+                    selectText.innerHTML = `<img src="/static/symbols/${bestSymbol}.png" style="width: 20px; height: 20px; object-fit: cover; vertical-align: middle; border-radius: 3px;"> ${bestSymbol}`;
                 } else {
                     selectText.innerHTML = '-- Auto (Fuzzy Match) --';
                 }
@@ -1134,7 +1391,8 @@
                     });
                 });
             } catch (e) {
-                console.warn('Failed to load symbols for inspector:', e);
+                console.error('Failed to load symbols for inspector:', e);
+                console.error('Error details:', e.message, e.stack);
                 selectText.innerHTML = '-- Auto --';
                 currentSymbolValue = '';
             }
@@ -1142,6 +1400,7 @@
             // Toggle dropdown on click
             selectEl.onclick = (e) => {
                 e.stopPropagation();
+                console.log('[Inspector] Dropdown clicked, current display:', dropdownMenu.style.display);
                 const isVisible = dropdownMenu.style.display !== 'none';
                 
                 if (isVisible) {
@@ -1149,6 +1408,7 @@
                 } else {
                     // Show dropdown and position it intelligently
                     dropdownMenu.style.display = 'block';
+                    console.log('[Inspector] Dropdown shown');
                     
                     // Check if dropdown would overflow viewport
                     const rect = selectEl.getBoundingClientRect();
@@ -1182,7 +1442,7 @@
             uploadEl.onchange = (e) => uploadCustomIcon(selectedNodeId, e.target);
             labelInput.onchange = async (e) => {
                 const newLabel = e.target.value.trim() || selectedNodeId;
-                if (node && node.length > 0) {
+                if (node && !node.empty()) {
                     node.data('label', newLabel);
                     if (!currentSymbolValue) {
                         const style = await getNodeStyle(newLabel);
@@ -1195,6 +1455,52 @@
         function setSelectedNode(nodeId) {
             selectedNodeId = nodeId || null;
             renderInspector();
+        }
+
+        // Update version indicator display
+        async function setVersionIndicator(versionNumber) {
+            currentVersionNumber = versionNumber;
+            const indicator = document.getElementById('version-indicator');
+            const versionLabel = document.getElementById('version-number');
+            const dateLabel = document.getElementById('version-date');
+            const descLabel = document.getElementById('version-description');
+            
+            if (indicator && versionLabel) {
+                versionLabel.textContent = `v${versionNumber}`;
+                
+                // Fetch version details to show date and description
+                const graphIdInput = document.getElementById('graph-id-input');
+                if (graphIdInput && graphIdInput.value) {
+                    try {
+                        const response = await fetch(`/api/graphs/${graphIdInput.value}/versions`);
+                        const data = await response.json();
+                        if (data.versions) {
+                            const version = data.versions.find(v => v.version_number === versionNumber);
+                            if (version) {
+                                const date = new Date(version.created_at);
+                                if (dateLabel) dateLabel.textContent = `• ${date.toLocaleDateString()}`;
+                                if (descLabel) {
+                                    const desc = version.instruction || '(no description)';
+                                    descLabel.textContent = `• ${desc}`;
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error fetching version details:', error);
+                    }
+                }
+                
+                indicator.style.display = 'inline-block';
+            }
+        }
+
+        // Clear version indicator (for new graphs)
+        function clearVersionIndicator() {
+            currentVersionNumber = null;
+            const indicator = document.getElementById('version-indicator');
+            if (indicator) {
+                indicator.style.display = 'none';
+            }
         }
         
         function syncGraphState() {
@@ -1256,6 +1562,23 @@
                     // Update graph_id if this was a new save
                     if (data.graph_id && graphIdInput) {
                         graphIdInput.value = data.graph_id;
+                        // Show version indicator for new saved graphs
+                        setVersionIndicator(1);
+                    } else {
+                        // Existing graph save - fetch latest version count to show current version
+                        if (graphIdInput?.value) {
+                            try {
+                                const versionResponse = await fetch(`/api/graphs/${graphIdInput.value}/versions`);
+                                const versionData = await versionResponse.json();
+                                if (versionData.versions && versionData.versions.length > 0) {
+                                    // Latest version is the highest number
+                                    const latestVersion = Math.max(...versionData.versions.map(v => v.version_number));
+                                    setVersionIndicator(latestVersion);
+                                }
+                            } catch (err) {
+                                console.error('Failed to fetch latest version:', err);
+                            }
+                        }
                     }
                     addMessage('ai', '✓ Graph saved successfully!');
                 } else {
@@ -1381,6 +1704,15 @@
                 
                 <p><strong>5. Save:</strong> Click the Save button (💾 icon) to save your work. Your diagram, positions, and customizations are all preserved.</p>
                 
+                <h3>Symbol Library</h3>
+                <p>Click the <strong>◆ Symbol Browser</strong> button in the header to explore the 250+ available P&ID symbols. You can:</p>
+                <ul>
+                    <li><strong>Search</strong> for symbols by name or category (pump, valve, heat exchanger, etc.)</li>
+                    <li><strong>Preview</strong> symbols before using them in your diagram</li>
+                    <li><strong>Learn</strong> what symbols are available for your process design</li>
+                    <li>Manually assign symbols to nodes using the Node Inspector</li>
+                </ul>
+                
                 <h3>Tips</h3>
                 <ul>
                     <li>Use technical terms for better AI recognition (e.g., centrifugal pump, ball valve, shell-and-tube heat exchanger)</li>
@@ -1470,6 +1802,326 @@
                 }
             });
         }
+
+        // Export dropdown menu
+        const exportBtn = document.getElementById('export-btn');
+        const exportMenu = document.getElementById('export-menu');
+        const exportPngOption = document.getElementById('export-png-option');
+        const exportSvgOption = document.getElementById('export-svg-option');
+
+        if (exportBtn && exportMenu) {
+            exportBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                exportMenu.style.display = exportMenu.style.display === 'none' ? 'block' : 'none';
+                // Reinitialize lucide icons in the menu
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            });
+
+            // Close menu when clicking outside
+            document.addEventListener('click', () => {
+                exportMenu.style.display = 'none';
+            });
+
+            exportMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+        }
+
+        // Export PNG
+        if (exportPngOption) {
+            exportPngOption.addEventListener('click', () => {
+                if (!cy) return;
+                
+                const pngBlob = cy.png({
+                    output: 'blob',
+                    full: true,
+                    scale: 3,
+                    bg: 'white'
+                });
+                
+                const url = URL.createObjectURL(pngBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'pid-diagram.png';
+                a.click();
+                URL.revokeObjectURL(url);
+                exportMenu.style.display = 'none';
+            });
+
+            // Hover effect
+            exportPngOption.addEventListener('mouseenter', () => {
+                exportPngOption.style.background = 'var(--neutral-100)';
+            });
+            exportPngOption.addEventListener('mouseleave', () => {
+                exportPngOption.style.background = 'none';
+            });
+        }
+
+        // Export SVG
+        if (exportSvgOption) {
+            exportSvgOption.addEventListener('click', () => {
+                if (!cy) return;
+                
+                const svgContent = cy.svg({ full: true, scale: 1 });
+                const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'pid-diagram.svg';
+                a.click();
+                URL.revokeObjectURL(url);
+                exportMenu.style.display = 'none';
+            });
+
+            // Hover effect
+            exportSvgOption.addEventListener('mouseenter', () => {
+                exportSvgOption.style.background = 'var(--neutral-100)';
+            });
+            exportSvgOption.addEventListener('mouseleave', () => {
+                exportSvgOption.style.background = 'none';
+            });
+        }
+
+        // Symbol Browser Modal
+        function openSymbolBrowser() {
+            const modal = document.getElementById('symbol-browser-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+                const searchInput = document.getElementById('symbol-search');
+                if (searchInput) searchInput.focus();
+                // Load symbols and populate grid
+                updateSymbolGrid('');
+            }
+            // Re-initialize Lucide icons in case they weren't rendered yet
+            if (typeof lucide !== 'undefined') {
+                setTimeout(() => lucide.createIcons(), 100);
+            }
+        }
+
+        function closeSymbolBrowser() {
+            const modal = document.getElementById('symbol-browser-modal');
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        // Version History Functions
+        function openVersionHistory() {
+            const modal = document.getElementById('version-history-modal');
+            const graphId = document.getElementById('graph-id-input')?.value;
+            
+            if (!graphId) {
+                alert('Please save the graph first to view version history');
+                return;
+            }
+            
+            if (modal) {
+                modal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+                loadVersionHistory(graphId);
+            }
+        }
+
+        function closeVersionHistory() {
+            const modal = document.getElementById('version-history-modal');
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        async function loadVersionHistory(graphId) {
+            const versionList = document.getElementById('version-list');
+            const loading = document.getElementById('version-loading');
+            const empty = document.getElementById('version-empty');
+            
+            versionList.innerHTML = '';
+            loading.style.display = 'block';
+            empty.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/graphs/${graphId}/versions`);
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (!data.success || data.versions.length === 0) {
+                    empty.style.display = 'block';
+                    return;
+                }
+                
+                data.versions.forEach((version) => {
+                    const item = document.createElement('div');
+                    const isCurrentVersion = currentVersionNumber === version.version_number;
+                    item.className = 'version-item' + (isCurrentVersion ? ' current' : '');
+                    
+                    const date = new Date(version.created_at);
+                    const timeAgo = getTimeAgo(date);
+                    // Show the description that was saved with this version
+                    const descriptionPreview = version.instruction ? version.instruction.substring(0, 80) : '(no description)';
+                    
+                    item.innerHTML = `
+                        <div class="version-info">
+                            <div class="version-number">v${version.version_number}${isCurrentVersion ? ' • Current' : ''}</div>
+                            <div class="version-time">${timeAgo} • ${date.toLocaleDateString()}</div>
+                            <div class="version-instruction">${descriptionPreview}</div>
+                        </div>
+                        ${!isCurrentVersion ? `<button onclick="restoreVersion(${graphId}, ${version.version_number})" style="border: none; background: none; cursor: pointer; padding: 0.5rem; color: var(--primary-blue);" title="Restore this version"><i data-lucide="folder-open" style="width: 18px; height: 18px;"></i></button>` : '<span style="padding: 0.5rem;"></span>'}
+                    `;
+                    
+                    versionList.appendChild(item);
+                });
+                
+                // Re-initialize lucide icons for newly added buttons
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            } catch (error) {
+                console.error('Error loading versions:', error);
+                loading.style.display = 'none';
+                empty.innerHTML = '<p>Error loading versions</p>';
+                empty.style.display = 'block';
+            }
+        }
+
+        async function restoreVersion(graphId, versionNumber) {
+            try {
+                const response = await fetch(`/api/graphs/${graphId}/versions/${versionNumber}/restore`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Store version number so it shows correctly after reload
+                    sessionStorage.setItem('loadedVersionNumber', versionNumber);
+                    window.location.reload();
+                }
+            } catch (error) {
+                console.error('Error restoring version:', error);
+            }
+        }
+
+        function getTimeAgo(timestamp) {
+            const now = new Date();
+            const past = new Date(timestamp);
+            const seconds = Math.floor((now - past) / 1000);
+            
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + ' minutes ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + ' hours ago';
+            if (seconds < 604800) return Math.floor(seconds / 86400) + ' days ago';
+            return past.toLocaleDateString();
+        }
+
+        async function updateSymbolGrid(searchQuery) {
+            // Ensure symbols are loaded
+            if (!SYMBOLS_LOADED && ALL_SYMBOLS.length === 0) {
+                console.log('Loading symbols...');
+                await loadSymbols();
+            }
+
+            const grid = document.getElementById('symbol-grid');
+            if (!grid) return;
+
+            console.log('ALL_SYMBOLS length:', ALL_SYMBOLS.length);
+            const query = searchQuery.toLowerCase().trim();
+            let filtered = ALL_SYMBOLS;
+
+            if (query) {
+                filtered = ALL_SYMBOLS.filter(sym => {
+                    const name = (sym.name || '').toLowerCase();
+                    const category = (sym.category || '').toLowerCase();
+                    return name.includes(query) || category.includes(query);
+                });
+            }
+
+            grid.innerHTML = '';
+            if (filtered.length === 0 && ALL_SYMBOLS.length === 0) {
+                const noSymbols = document.createElement('div');
+                noSymbols.style.cssText = 'grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--neutral-500);';
+                noSymbols.innerHTML = '<p>Loading symbols...</p>';
+                grid.appendChild(noSymbols);
+                return;
+            }
+
+            filtered.forEach(symbol => {
+                const item = document.createElement('div');
+                item.className = 'symbol-browser-item';
+                const symbolPath = symbol.path || symbol.url || '';
+                item.innerHTML = `
+                    <div class="symbol-image">
+                        <img src="${symbolPath}" alt="${symbol.name}" onerror="this.style.display='none'">
+                    </div>
+                    <div class="symbol-name">${symbol.name}</div>
+                    <div class="symbol-category">${symbol.category || ''}</div>
+                `;
+                grid.appendChild(item);
+            });
+
+            const noResults = document.getElementById('symbol-no-results');
+            if (noResults) {
+                noResults.style.display = (filtered.length === 0 && ALL_SYMBOLS.length > 0) ? 'block' : 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('symbol-browser-modal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeSymbolBrowser();
+                    }
+                });
+            }
+
+            const searchInput = document.getElementById('symbol-search');
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    updateSymbolGrid(this.value);
+                });
+            }
+
+            const symbolBrowserBtn = document.getElementById('symbol-browser-btn');
+            if (symbolBrowserBtn) {
+                symbolBrowserBtn.addEventListener('click', openSymbolBrowser);
+            }
+
+            const closeBrowserBtn = document.getElementById('close-browser-btn');
+            if (closeBrowserBtn) {
+                closeBrowserBtn.addEventListener('click', closeSymbolBrowser);
+            }
+
+            // Version History modal handlers
+            const historyBtn = document.getElementById('history-btn');
+            if (historyBtn) {
+                historyBtn.addEventListener('click', openVersionHistory);
+            }
+
+            const closeHistoryBtn = document.getElementById('close-history-btn');
+            if (closeHistoryBtn) {
+                closeHistoryBtn.addEventListener('click', closeVersionHistory);
+            }
+
+            const versionModal = document.getElementById('version-history-modal');
+            if (versionModal) {
+                versionModal.addEventListener('click', function(e) {
+                    if (e.target === versionModal) {
+                        closeVersionHistory();
+                    }
+                });
+            }
+
+            // Re-initialize Lucide icons to render all icons
+            setTimeout(() => {
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            }, 200);
+        });
     </script>
 </body>
 </html>
