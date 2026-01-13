@@ -44,20 +44,25 @@ def init_db():
                 provider_id TEXT,
                 email TEXT,
                 display_name TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                last_login TEXT
             )
             """
         )
     else:
-        # Table exists - need to check constraints and potentially recreate
+        # Table exists - need to check constraints and potentially add columns
         # SQLite doesn't support ALTER COLUMN, so we need to recreate if needed
         cur.execute("PRAGMA table_info(users)")
         columns = cur.fetchall()
+        column_names = [col[1] for col in columns]
+        
         # Check if username or password_hash have NOT NULL constraint (notnull == 1)
         has_constraint = any(col[1] in ('username', 'password_hash') and col[3] == 1 for col in columns)
+        # Check if last_login column exists
+        has_last_login = 'last_login' in column_names
         
-        if has_constraint:
-            print("[DB] Recreating users table to remove NOT NULL constraints...")
+        if has_constraint or not has_last_login:
+            print("[DB] Migrating users table...")
             # Backup existing data
             cur.execute("SELECT id, username, password_hash, provider, provider_id, email, display_name, created_at FROM users")
             existing_users = cur.fetchall()
@@ -74,7 +79,8 @@ def init_db():
                     provider_id TEXT,
                     email TEXT,
                     display_name TEXT,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    last_login TEXT
                 )
                 """
             )
@@ -218,6 +224,16 @@ def get_user(user_id: int) -> Optional[dict]:
     if not row:
         return None
     return {"id": row[0], "username": row[1], "email": row[2], "display_name": row[3], "created_at": row[4]}
+
+
+def update_last_login(user_id: int):
+    """Update the last_login timestamp for a user."""
+    conn = _conn()
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    cur.execute("UPDATE users SET last_login = ? WHERE id = ?", (now, user_id))
+    conn.commit()
+    conn.close()
 
 
 def save_graph(user_id: int, filename: str, instruction: str, nodes: list, edges: list) -> int:

@@ -96,6 +96,19 @@
             font-size: 0.875rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+        
+        th:hover {
+            background: var(--neutral-200);
+        }
+        
+        .sort-indicator {
+            display: inline-block;
+            margin-left: 0.5rem;
+            font-size: 0.75rem;
         }
         
         td {
@@ -162,24 +175,37 @@
                 <div class="stat-label">GitHub OAuth</div>
                 <div class="stat-value">{{ github_users }}</div>
             </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Last 7 Days</div>
+                <div class="stat-value" style="color: #10B981;">{{ active_7d }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Last 30 Days</div>
+                <div class="stat-value" style="color: #3B82F6;">{{ active_30d }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Never Logged In</div>
+                <div class="stat-value" style="color: #EF4444;">{{ never_logged_in }}</div>
+            </div>
         </div>
         
         {% if users %}
-        <h2 style="margin-top: 2rem; color: var(--neutral-900);">User Signups</h2>
+        <h2 style="margin-top: 2rem; color: var(--neutral-900);">User Activity</h2>
         <table>
             <thead>
                 <tr>
-                    <th>ID</th>
+                    <th onclick="sortTable('id')">ID <span class="sort-indicator" id="sort-id"></span></th>
                     <th>Email</th>
                     <th>Display Name</th>
                     <th>Provider</th>
-                    <th>Signed Up</th>
+                    <th onclick="sortTable('created')">Signed Up <span class="sort-indicator" id="sort-created"></span></th>
+                    <th onclick="sortTable('login')">Last Login <span class="sort-indicator" id="sort-login"></span></th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="user-table-body">
                 {% for user in users %}
                 <tr>
-                    <td>#{{ user.id }}</td>
+                    <td>{{ user.id }}</td>
                     <td>{{ user.email or '-' }}</td>
                     <td>{{ user.display_name or '-' }}</td>
                     <td>
@@ -187,7 +213,14 @@
                             {{ user.provider }}
                         </span>
                     </td>
-                    <td>{{ user.created_at }}</td>
+                    <td>{{ user.created_at[:10] }}</td>
+                    <td>
+                        {% if user.last_login %}
+                            {{ user.last_login[:10] }}
+                        {% else %}
+                            <span style="color: #999; font-style: italic;">Never</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -198,5 +231,53 @@
         </div>
         {% endif %}
     </div>
-</body>
-</html>
+    
+    <script>
+        let currentSort = { column: 'id', direction: 'asc' };
+        
+        function sortTable(column) {
+            const tbody = document.getElementById('user-table-body');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            // Toggle direction if same column clicked
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+            
+            rows.sort((a, b) => {
+                let aValue, bValue;
+                
+                if (column === 'id') {
+                    aValue = parseInt(a.cells[0].textContent);
+                    bValue = parseInt(b.cells[0].textContent);
+                } else if (column === 'created') {
+                    aValue = a.cells[4].textContent;
+                    bValue = b.cells[4].textContent;
+                } else if (column === 'login') {
+                    const aText = a.cells[5].textContent.trim();
+                    const bText = b.cells[5].textContent.trim();
+                    aValue = aText === 'Never' ? '0000-00-00' : aText;
+                    bValue = bText === 'Never' ? '0000-00-00' : bText;
+                }
+                
+                if (aValue < bValue) return currentSort.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return currentSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            rows.forEach(row => tbody.appendChild(row));
+            updateSortIndicators();
+        }
+        
+        function updateSortIndicators() {
+            document.getElementById('sort-id').textContent = currentSort.column === 'id' ? (currentSort.direction === 'asc' ? '↑' : '↓') : '';
+            document.getElementById('sort-created').textContent = currentSort.column === 'created' ? (currentSort.direction === 'asc' ? '↑' : '↓') : '';
+            document.getElementById('sort-login').textContent = currentSort.column === 'login' ? (currentSort.direction === 'asc' ? '↑' : '↓') : '';
+        }
+        
+        // Show sort indicators on page load
+        document.addEventListener('DOMContentLoaded', updateSortIndicators);
+    </script>

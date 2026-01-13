@@ -227,7 +227,7 @@ async def admin_panel(request: Request):
     # Get all users from database
     conn = auth._conn()
     cur = conn.cursor()
-    cur.execute("SELECT id, email, display_name, provider, created_at FROM users ORDER BY created_at DESC")
+    cur.execute("SELECT id, email, display_name, provider, created_at, last_login FROM users ORDER BY created_at DESC")
     users = []
     for row in cur.fetchall():
         users.append({
@@ -235,7 +235,8 @@ async def admin_panel(request: Request):
             'email': row[1],
             'display_name': row[2],
             'provider': row[3],
-            'created_at': row[4]
+            'created_at': row[4],
+            'last_login': row[5]
         })
     
     # Get stats
@@ -248,6 +249,21 @@ async def admin_panel(request: Request):
     cur.execute("SELECT COUNT(*) FROM users WHERE provider = 'github'")
     github_users = cur.fetchone()[0]
     
+    # Retention metrics
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    seven_days_ago = (now - timedelta(days=7)).isoformat()
+    thirty_days_ago = (now - timedelta(days=30)).isoformat()
+    
+    cur.execute("SELECT COUNT(*) FROM users WHERE last_login IS NOT NULL AND last_login >= ?", (seven_days_ago,))
+    active_7d = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM users WHERE last_login IS NOT NULL AND last_login >= ?", (thirty_days_ago,))
+    active_30d = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM users WHERE last_login IS NULL")
+    never_logged_in = cur.fetchone()[0]
+    
     conn.close()
     
     return templates.TemplateResponse("admin.html", {
@@ -255,7 +271,10 @@ async def admin_panel(request: Request):
         "users": users,
         "total_users": total_users,
         "google_users": google_users,
-        "github_users": github_users
+        "github_users": github_users,
+        "active_7d": active_7d,
+        "active_30d": active_30d,
+        "never_logged_in": never_logged_in
     })
 
 
@@ -442,6 +461,9 @@ async def auth_callback(request: Request, provider: str):
         if uid is None:
             print("[OAuth ERROR] Failed to create/get user")
             return templates.TemplateResponse("index.html", index_context(request, error="Failed to create user account"))
+
+        # Record login
+        auth.update_last_login(uid)
 
         print(f"[OAuth] Setting session user_id={uid}")
         request.session["user_id"] = uid
