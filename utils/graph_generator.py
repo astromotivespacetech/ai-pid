@@ -145,6 +145,9 @@ def generate_pid_graph(instruction: str, filename_base: str = "pid_graph", exist
                     content = None
 
             if not content:
+                try:
+                    if hasattr(resp, "to_dict"):
+                        rdict = resp.to_dict()
                         content = rdict.get("output_text") or None
                         if not content:
                             outs = rdict.get("output") or rdict.get("choices") or []
@@ -159,7 +162,7 @@ def generate_pid_graph(instruction: str, filename_base: str = "pid_graph", exist
                 except Exception:
                     content = None
 
-            # 5) last resort: string form of the response
+            # Last resort: string form of the response
             if not content:
                 try:
                     content = str(resp)
