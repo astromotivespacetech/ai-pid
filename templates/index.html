@@ -365,7 +365,7 @@
             flex: 1;
             border: 1px solid var(--neutral-200);
             background: white;
-            border-radius: var(--radius-xl);
+            border-radius: 0 0 var(--radius-xl) var(--radius-xl);
             box-shadow: var(--shadow-md);
             overflow: hidden;
         }
@@ -532,9 +532,6 @@
                 {% endif %}
             </div>
             <div class="header-actions">
-                {% if not user %}
-                <a href="/" class="btn" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none; white-space: nowrap;">Sign In</a>
-                {% endif %}
                 <button id="symbol-browser-btn" class="header-text-btn" title="Browse Symbols">
                     <span style="font-size: 1rem;">◆</span>
                     <span>Symbol Library</span>
@@ -623,7 +620,7 @@
                 {% endif %}
 
                 {% if is_demo %}
-                <div style="padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); border-bottom: 1px solid #d97706; text-align: center; color: white; font-weight: 600; font-size: 0.95rem;">
+                <div style="padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); border-bottom: 1px solid #d97706; text-align: center; color: white; font-weight: 600; font-size: 0.95rem; border-radius: var(--radius-xl) var(--radius-xl) 0 0;">
                     🎯 Demo Mode • Changes won't be saved • <a href="/" style="color: white; text-decoration: underline; font-weight: 700;">Sign in</a> to save your diagrams
                 </div>
                 {% endif %}
@@ -1088,6 +1085,9 @@
             // Clear version indicator for new graphs from chat
             clearVersionIndicator();
             
+            // Clear saved node positions for new graphs so they get properly laid out
+            localStorage.removeItem('graphNodePositions');
+            
             // Make sure graph container and controls are visible
             const graphContainer = document.getElementById('graph-container');
             const controlsInspectorRow = document.getElementById('controls-inspector-row');
@@ -1150,6 +1150,11 @@
                             }
                         }
                     });
+                    
+                    // Apply default left-to-right layout
+                    setTimeout(() => {
+                        applyDefaultLayout();
+                    }, 100);
                     
                     // Node inspector uses live selection; no bulk population needed
                 }).catch(err => {
@@ -1214,8 +1219,8 @@
                     }
                 });
                 
-                // Re-layout
-                cy.layout({ name: 'cose', animate: true, animationDuration: 500 }).run();
+                // Apply default left-to-right layout for updated graphs
+                applyDefaultLayout();
                 // Node inspector uses live selection; no bulk population needed
             }
         }
@@ -1248,12 +1253,17 @@
             
             // Initialize graph if nodes exist
             if (nodeData && nodeData.length > 0) {
-                cy = await initGraphViewer('graph-container', nodeData, edgeData);
-                // Only apply default L→R layout if there are no saved positions
-                const savedPositions = localStorage.getItem('graphNodePositions');
-                if (!savedPositions) {
-                    applyDefaultLayout();
+                // For demo mode, always clear saved positions to get fresh layout
+                const isDemoMode = document.getElementById('is-demo')?.value === 'true';
+                if (isDemoMode) {
+                    localStorage.removeItem('graphNodePositions');
                 }
+                
+                cy = await initGraphViewer('graph-container', nodeData, edgeData);
+                // Always apply default L→R layout
+                setTimeout(() => {
+                    applyDefaultLayout();
+                }, 100);
             }
 
             // Initialize Lucide icons
@@ -2171,6 +2181,91 @@
                 }
             }, 200);
         });
+
+        // Footer modal handlers
+        function openPrivacyModal() {
+            document.getElementById('privacy-modal').style.display = 'flex';
+        }
+
+        function closePrivacyModal() {
+            document.getElementById('privacy-modal').style.display = 'none';
+        }
+
+        function openTermsModal() {
+            document.getElementById('terms-modal').style.display = 'flex';
+        }
+
+        function closeTermsModal() {
+            document.getElementById('terms-modal').style.display = 'none';
+        }
+
+        // Close modals when clicking outside
+        document.getElementById('privacy-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'privacy-modal') closePrivacyModal();
+        });
+
+        document.getElementById('terms-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'terms-modal') closeTermsModal();
+        });
     </script>
+
+    <!-- Footer -->
+    <footer style="padding: 0.75rem 2rem; border-top: 1px solid var(--neutral-200); background: white; text-align: center; color: var(--neutral-600); font-size: 0.8rem;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 1.25rem; flex-wrap: wrap;">
+            <div>© 2026 AI P&ID</div>
+            <a href="mailto:lawrencemsheets@gmail.com" style="color: var(--primary-blue); text-decoration: none;">Contact</a>
+            <a href="#" onclick="openPrivacyModal(); return false;" style="color: var(--primary-blue); text-decoration: none;">Privacy</a>
+            <a href="#" onclick="openTermsModal(); return false;" style="color: var(--primary-blue); text-decoration: none;">Terms</a>
+        </div>
+    </footer>
+
+    <!-- Privacy Modal -->
+    <div id="privacy-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Privacy Policy</h2>
+                <button onclick="closePrivacyModal()" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h3>Information We Collect</h3>
+                <p>When you create an account, we collect your email address and authentication information. P&ID diagrams you create are stored in your account and associated with your email.</p>
+
+                <h3>How We Use Your Information</h3>
+                <p>Your data is used solely to provide and improve the AI P&ID Tool service. We do not sell, share, or use your diagrams for any purpose other than providing you access to them. AI-generated suggestions may be based on your input, but diagram data is not retained for model training without your explicit consent.</p>
+
+                <h3>Data Security</h3>
+                <p>We implement standard security measures to protect your diagrams. Authentication is handled securely through OAuth providers (Google and GitHub), so we never store your passwords. Your diagrams are encrypted in transit and at rest.</p>
+
+                <h3>Contact</h3>
+                <p>For privacy concerns, please contact us at <a href="mailto:lawrencemsheets@gmail.com" style="color: var(--primary-blue);">lawrencemsheets@gmail.com</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terms Modal -->
+    <div id="terms-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Terms of Service</h2>
+                <button onclick="closeTermsModal()" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h3>Use License</h3>
+                <p>You are granted a non-exclusive, non-transferable license to use the AI P&ID Tool for personal and professional use. You may not reverse engineer, decompile, or attempt to derive the underlying algorithms.</p>
+
+                <h3>User Responsibilities</h3>
+                <p>You agree to use the tool lawfully and not to create content that violates intellectual property rights, defames others, or is otherwise harmful. You are responsible for the diagrams you create and share.</p>
+
+                <h3>Limitations of Liability</h3>
+                <p>The AI P&ID Tool is provided "as is" without warranties of any kind. We are not liable for errors in AI-generated suggestions or any damages resulting from use of the tool. Users should review and validate all generated content before relying on it for critical engineering work.</p>
+
+                <h3>Service Modifications</h3>
+                <p>We reserve the right to modify, suspend, or discontinue the service at any time. We will provide notice of significant changes when possible.</p>
+
+                <h3>Contact</h3>
+                <p>Questions about these terms? Contact us at <a href="mailto:lawrencemsheets@gmail.com" style="color: var(--primary-blue);">lawrencemsheets@gmail.com</a></p>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
