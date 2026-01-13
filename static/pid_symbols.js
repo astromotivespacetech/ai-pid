@@ -34,9 +34,11 @@ const SYNONYM_MAP = {
     'vessel': 'vessel',
     'drum': 'vessel',
     'column': 'vessel',
+    'tank': 'vessel_tank_cistern',
+    'storage': 'vessel_tank_cistern',
+    'storage_tank': 'vessel_tank_cistern',
     'knockout': 'separator',
     'separator': 'separator',
-    'tank': 'tank',
     'filter': 'filter',
     'strainer': 'filter',
     'controller': 'controller'
