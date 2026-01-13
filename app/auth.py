@@ -6,10 +6,22 @@ from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "app.db")
 
+# Admin email addresses - update this list with admin email(s)
+ADMIN_EMAILS = [
+    "lawrencemsheets@gmail.com"
+]
+
 
 def _conn():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     return sqlite3.connect(DB_PATH)
+
+
+def is_admin(email: Optional[str]) -> bool:
+    """Check if an email is in the admin list."""
+    if not email:
+        return False
+    return email.lower() in [e.lower() for e in ADMIN_EMAILS]
 
 
 def init_db():

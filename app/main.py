@@ -203,6 +203,109 @@ async def demo(request: Request):
     ))
 
 
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(request: Request):
+    """
+    Admin panel to view user signups.
+    Requires admin authentication.
+    """
+    # Check if user is logged in and is an admin
+    uid = request.session.get("user_id")
+    if not uid:
+        return HTMLResponse(
+            content="<html><body style='font-family: sans-serif; padding: 2rem;'><h1>❌ Access Denied</h1><p>You must be logged in to access this page.</p><a href='/'>← Back to App</a></body></html>",
+            status_code=403
+        )
+    
+    user = auth.get_user(uid)
+    if not user or not auth.is_admin(user.get("email")):
+        return HTMLResponse(
+            content="<html><body style='font-family: sans-serif; padding: 2rem;'><h1>❌ Access Denied</h1><p>You do not have permission to access this page.</p><a href='/'>← Back to App</a></body></html>",
+            status_code=403
+        )
+    
+    # Get all users from database
+    conn = auth._conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, display_name, provider, created_at FROM users ORDER BY created_at DESC")
+    users = []
+    for row in cur.fetchall():
+        users.append({
+            'id': row[0],
+            'email': row[1],
+            'display_name': row[2],
+            'provider': row[3],
+            'created_at': row[4]
+        })
+    
+    # Get stats
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM users WHERE provider = 'google'")
+    google_users = cur.fetchone()[0]
+    
+    cur.execute("SELECT COUNT(*) FROM users WHERE provider = 'github'")
+    github_users = cur.fetchone()[0]
+    
+    conn.close()
+    
+    return templates.TemplateResponse("admin.html", {
+        "request": request,
+        "users": users,
+        "total_users": total_users,
+        "google_users": google_users,
+        "github_users": github_users
+    })
+
+
+@app.get("/admin/export-csv")
+async def export_users_csv(request: Request):
+    """
+    Export all user signups as CSV.
+    Requires admin authentication.
+    """
+    # Check if user is logged in and is an admin
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse(
+            {"error": "Not logged in"},
+            status_code=403
+        )
+    
+    user = auth.get_user(uid)
+    if not user or not auth.is_admin(user.get("email")):
+        return JSONResponse(
+            {"error": "Access denied"},
+            status_code=403
+        )
+    
+    import csv
+    from io import StringIO
+    
+    # Get all users from database
+    conn = auth._conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, display_name, provider, created_at FROM users ORDER BY created_at DESC")
+    users = cur.fetchall()
+    conn.close()
+    
+    # Generate CSV
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Email', 'Display Name', 'Provider', 'Signed Up'])
+    for user in users:
+        writer.writerow(user)
+    
+    csv_content = output.getvalue()
+    
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users.csv"}
+    )
+
+
 @app.post("/generate-pid")
 async def generate_graph(request: Request, instruction: str = Form(...), existing_nodes: str = Form(None), existing_edges: str = Form(None)):
     """

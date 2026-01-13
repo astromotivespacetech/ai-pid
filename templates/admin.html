@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - AI P&ID Tool</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        body {
+            background: var(--neutral-50);
+            padding: 2rem;
+        }
+        
+        .admin-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: 2rem;
+        }
+        
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid var(--neutral-200);
+            padding-bottom: 1rem;
+        }
+        
+        .admin-header h1 {
+            margin: 0;
+            color: var(--neutral-900);
+        }
+        
+        .logout-btn {
+            padding: 0.5rem 1rem;
+            background: var(--error);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .logout-btn:hover {
+            opacity: 0.9;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--neutral-50);
+            padding: 1.5rem;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--neutral-200);
+        }
+        
+        .stat-label {
+            color: var(--neutral-600);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-blue);
+            margin-top: 0.5rem;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 2rem;
+        }
+        
+        thead {
+            background: var(--neutral-100);
+            border-bottom: 2px solid var(--neutral-200);
+        }
+        
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--neutral-900);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--neutral-200);
+            color: var(--neutral-700);
+        }
+        
+        tr:hover {
+            background: var(--neutral-50);
+        }
+        
+        .provider-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .provider-google {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .provider-github {
+            background: #F3E8FF;
+            color: #6B21A8;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--neutral-500);
+        }
+        
+        .empty-state p {
+            margin: 0;
+            font-size: 1.125rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>🔐 Admin Panel</h1>
+            <div style="display: flex; gap: 1rem;">
+                <a href="/admin/export-csv" class="logout-btn" style="background: var(--primary-blue); text-decoration: none;">📥 Export CSV</a>
+                <a href="/" class="logout-btn">← Back to App</a>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Total Users</div>
+                <div class="stat-value">{{ total_users }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Google OAuth</div>
+                <div class="stat-value">{{ google_users }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">GitHub OAuth</div>
+                <div class="stat-value">{{ github_users }}</div>
+            </div>
+        </div>
+        
+        {% if users %}
+        <h2 style="margin-top: 2rem; color: var(--neutral-900);">User Signups</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Email</th>
+                    <th>Display Name</th>
+                    <th>Provider</th>
+                    <th>Signed Up</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>#{{ user.id }}</td>
+                    <td>{{ user.email or '-' }}</td>
+                    <td>{{ user.display_name or '-' }}</td>
+                    <td>
+                        <span class="provider-badge provider-{{ user.provider|lower }}">
+                            {{ user.provider }}
+                        </span>
+                    </td>
+                    <td>{{ user.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>No users have signed up yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
